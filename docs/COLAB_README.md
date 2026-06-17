@@ -12,6 +12,13 @@ Dataset diambil langsung dari folder Google Drive publik:
 https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ
 ```
 
+Folder Drive tersebut berisi archive dataset, misalnya:
+
+```text
+Classification.tar  ← gambar dataset
+Detection.tar       ← annotation XML VOC
+```
+
 Yang perlu kamu upload sendiri hanya script project ke `MyDrive/acne_project/`.
 
 | File | Dari mana |
@@ -106,27 +113,40 @@ gdown.download_folder(
 print("✅ Dataset selesai didownload ke", DOWNLOAD_DIR)
 ```
 
-Auto-detect folder gambar dan annotation JSON:
+Auto-detect folder gambar dan annotation JSON/XML:
 
 ```python
 def find_image_dir(root):
     best_dir, best_count = None, 0
     for d in root.rglob("*"):
         if d.is_dir():
-            count = len(list(d.glob("*.jpg"))) + len(list(d.glob("*.JPG")))
+            count = len(list(d.glob("*.jpg"))) + len(list(d.glob("*.JPG"))) + \
+                    len(list(d.glob("*.jpeg"))) + len(list(d.glob("*.JPEG")))
             if count > best_count:
                 best_dir, best_count = d, count
     return best_dir
 
-def find_annotation_json(root):
-    candidates = list(root.rglob("*.json"))
-    for c in candidates:
+def find_annotation_path(root):
+    json_candidates = list(root.rglob("*.json"))
+    for c in json_candidates:
         if "annot" in c.name.lower() or "acne04" in c.name.lower():
             return c
-    return candidates[0] if candidates else None
+    if json_candidates:
+        return json_candidates[0]
+
+    xml_dirs = []
+    for d in root.rglob("*"):
+        if d.is_dir():
+            n_xml = len(list(d.glob("*.xml")))
+            if n_xml > 0:
+                xml_dirs.append((n_xml, d))
+    if xml_dirs:
+        xml_dirs.sort(reverse=True)
+        return xml_dirs[0][1]
+    return None
 
 IMAGE_DIR = find_image_dir(DOWNLOAD_DIR)
-ANNOT_JSON = find_annotation_json(DOWNLOAD_DIR)
+ANNOT_JSON = find_annotation_path(DOWNLOAD_DIR)
 
 print("Image dir :", IMAGE_DIR)
 print("Annotation:", ANNOT_JSON)

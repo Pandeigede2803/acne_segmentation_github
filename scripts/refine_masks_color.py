@@ -33,6 +33,7 @@ import json
 import random
 from collections import defaultdict
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import cv2
 import numpy as np
@@ -347,6 +348,77 @@ def pick_vis_samples(
     return selected
 
 
+def load_json_circle_annotations(
+    annotations_json: Path,
+) -> tuple[dict[str, list[tuple[float, float, float]]], dict[str, tuple[int, int]]]:
+    with open(annotations_json, encoding="utf-8") as f:
+        ann_data = json.load(f)
+
+    circles_by_file: dict[str, list[tuple[float, float, float]]] = {}
+    size_by_file: dict[str, tuple[int, int]] = {}
+
+    images_meta = {img["id"]: img for img in ann_data["images"]}
+    for ann in ann_data["annotations"]:
+        img_meta = images_meta[ann["image_id"]]
+        fname = img_meta["file_name"]
+        cx, cy = ann["coordinates"]
+        r = ann["radius"]
+        circles_by_file.setdefault(fname, []).append((cx, cy, r))
+        size_by_file[fname] = (img_meta["width"], img_meta["height"])
+
+    return circles_by_file, size_by_file
+
+
+def load_voc_xml_annotations(
+    annotations_dir: Path,
+) -> tuple[dict[str, list[tuple[float, float, float]]], dict[str, tuple[int, int]]]:
+    xml_files = sorted(annotations_dir.rglob("*.xml"))
+    if not xml_files:
+        raise FileNotFoundError(f"Tidak ada file XML di {annotations_dir}")
+
+    circles_by_file: dict[str, list[tuple[float, float, float]]] = {}
+    size_by_file: dict[str, tuple[int, int]] = {}
+
+    for xml_path in xml_files:
+        root = ET.parse(xml_path).getroot()
+        filename = root.findtext("filename") or f"{xml_path.stem}.jpg"
+
+        width_text = root.findtext("size/width")
+        height_text = root.findtext("size/height")
+        if width_text and height_text:
+            size_by_file[filename] = (int(float(width_text)), int(float(height_text)))
+
+        for obj in root.findall("object"):
+            box = obj.find("bndbox")
+            if box is None:
+                continue
+            xmin = float(box.findtext("xmin", "0"))
+            ymin = float(box.findtext("ymin", "0"))
+            xmax = float(box.findtext("xmax", "0"))
+            ymax = float(box.findtext("ymax", "0"))
+            if xmax <= xmin or ymax <= ymin:
+                continue
+
+            cx = 0.5 * (xmin + xmax)
+            cy = 0.5 * (ymin + ymax)
+            radius = 0.5 * max(xmax - xmin, ymax - ymin)
+            circles_by_file.setdefault(filename, []).append((cx, cy, radius))
+
+    return circles_by_file, size_by_file
+
+
+def load_annotations(
+    annotations_path: Path,
+) -> tuple[dict[str, list[tuple[float, float, float]]], dict[str, tuple[int, int]]]:
+    if annotations_path.is_dir():
+        return load_voc_xml_annotations(annotations_path)
+    if annotations_path.suffix.lower() == ".xml":
+        return load_voc_xml_annotations(annotations_path.parent)
+    if annotations_path.suffix.lower() == ".json":
+        return load_json_circle_annotations(annotations_path)
+    raise ValueError(f"Format anotasi tidak didukung: {annotations_path}")
+
+
 def process_dataset(
     image_dir: Path,
     annotations_json: Path,
@@ -380,20 +452,7 @@ def process_dataset(
         preproc_dir.mkdir(exist_ok=True)
 
     print(f"Membaca anotasi dari {annotations_json}")
-    with open(annotations_json) as f:
-        ann_data = json.load(f)
-
-    circles_by_file: dict[str, list[tuple[float, float, float]]] = {}
-    size_by_file:    dict[str, tuple[int, int]] = {}
-
-    images_meta = {img["id"]: img for img in ann_data["images"]}
-    for ann in ann_data["annotations"]:
-        img_meta = images_meta[ann["image_id"]]
-        fname    = img_meta["file_name"]
-        cx, cy   = ann["coordinates"]
-        r        = ann["radius"]
-        circles_by_file.setdefault(fname, []).append((cx, cy, r))
-        size_by_file[fname] = (img_meta["width"], img_meta["height"])
+    circles_by_file, size_by_file = load_annotations(annotations_json)
 
     # Kumpulkan path gambar
     all_paths: list[Path] = []
@@ -549,6 +608,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--annotations-json", type=Path,
         default=root.parent / "acne04v2" / "Acne04-v2_annotations.json",
+        help="Path ke JSON ACNE04-v2 atau folder VOC XML Annotations.",
     )
     parser.add_argument(
         "--output-dir", type=Path,
