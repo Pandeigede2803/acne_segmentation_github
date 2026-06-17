@@ -4,26 +4,25 @@ Pipeline segmentasi jerawat ACNE04-v2 di Google Colab dari nol.
 
 ---
 
-## Yang Perlu Diupload dari Laptop
+## Yang Perlu Disiapkan
 
-> **Hanya 5 file Python (~130 KB total.)**
-> Dataset dan anotasi sudah tersedia online — tidak perlu upload dari laptop.
+Dataset diambil langsung dari folder Google Drive publik:
+
+```text
+https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ
+```
+
+Yang perlu kamu upload sendiri hanya script project ke `MyDrive/acne_project/`.
 
 | File | Dari mana |
 |---|---|
-| Gambar dataset (1204 jpg) | Kaggle / Google Drive — download langsung di Colab |
-| `Acne04-v2_annotations.json` | GitHub — clone langsung di Colab |
-| `train_baseline_dilated_unet.py` | Upload dari laptop ke Drive |
-| `train_proposal_hybrid_resnet50_malds.py` | Upload dari laptop ke Drive |
-| `refine_masks_color.py` | Upload dari laptop ke Drive |
-| `infer_testing_images.py` | Upload dari laptop ke Drive |
-| `code_dari_claude/train_hybrid_resnet50_staged.py` | Upload dari laptop ke Drive |
+| `acne_scripts.zip` | Berisi semua script Python project |
 
 ---
 
 ## Persiapan — Upload Script ke Drive (Lakukan Sekali)
 
-Zip 5 file script dari terminal laptop:
+Zip script dari terminal laptop:
 
 ```bash
 cd "/Users/macbookprom1/Kuliah s2/dataset-acne"
@@ -36,7 +35,12 @@ zip acne_scripts.zip \
   projectsegmentasi/code_dari_claude/train_hybrid_resnet50_staged.py
 ```
 
-Upload `acne_scripts.zip` ke Google Drive → folder `MyDrive/acne_project/`.
+Upload file ini ke Google Drive:
+
+```text
+MyDrive/acne_project/
+└── acne_scripts.zip
+```
 
 ---
 
@@ -77,86 +81,60 @@ print("✅ Drive terhubung")
 ```python
 %%capture
 !pip install torch torchvision pillow opencv-python-headless \
-             numpy matplotlib pandas tqdm kagglehub gdown
+             numpy matplotlib pandas tqdm scikit-learn gdown
 print("✅ Semua library terinstall")
 ```
 
----
-
-## Step 4 — Download Dataset (Pilih Salah Satu)
-
-### Option A — Dari Kaggle (Rekomendasi, paling lengkap)
+## Step 4 — Download Dataset dari Folder Google Drive
 
 ```python
-import kagglehub
-
-path = kagglehub.dataset_download("karmagames/acne04-v2")
-print("✅ Dataset tersimpan di:", path)
-
-# Lihat isi folder
-import os
-for root, dirs, files in os.walk(path):
-    level = root.replace(path, '').count(os.sep)
-    indent = '  ' * level
-    print(f'{indent}{os.path.basename(root)}/')
-    if level < 2:
-        for f in files[:5]:
-            print(f'{indent}  {f}')
-```
-
-Simpan path ini, akan dipakai di Step 6:
-
-```python
-KAGGLE_PATH = path  # simpan untuk dipakai nanti
-```
-
----
-
-### Option B — Dari Google Drive (download folder)
-
-```python
+from pathlib import Path
 import gdown
 
-# Download folder dataset
+DOWNLOAD_DIR = Path("/content/acne_images")
+DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+DATASET_DRIVE_FOLDER = "https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ"
+
 gdown.download_folder(
-    "https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ",
-    output="/content/acne_dataset/",
-    quiet=False
+    DATASET_DRIVE_FOLDER,
+    output=str(DOWNLOAD_DIR),
+    quiet=False,
+    use_cookies=False,
 )
-print("✅ Dataset selesai didownload")
-!ls /content/acne_dataset/
+
+print("✅ Dataset selesai didownload ke", DOWNLOAD_DIR)
 ```
 
----
-
-## Step 5 — Clone Anotasi v2 dari GitHub
+Auto-detect folder gambar dan annotation JSON:
 
 ```python
-!git clone https://github.com/AIpourlapeau/acne04v2 /content/acne04v2
+def find_image_dir(root):
+    best_dir, best_count = None, 0
+    for d in root.rglob("*"):
+        if d.is_dir():
+            count = len(list(d.glob("*.jpg"))) + len(list(d.glob("*.JPG")))
+            if count > best_count:
+                best_dir, best_count = d, count
+    return best_dir
 
-# Verifikasi
-import json
-annot_path = "/content/acne04v2/Acne04-v2_annotations.json"
-with open(annot_path) as f:
-    data = json.load(f)
+def find_annotation_json(root):
+    candidates = list(root.rglob("*.json"))
+    for c in candidates:
+        if "annot" in c.name.lower() or "acne04" in c.name.lower():
+            return c
+    return candidates[0] if candidates else None
 
-imgs   = data.get("images", [])
-annots = data.get("annotations", [])
-print(f"✅ Anotasi berhasil di-clone")
-print(f"   Jumlah gambar  : {len(imgs)}")
-print(f"   Jumlah anotasi : {len(annots)}")
-```
+IMAGE_DIR = find_image_dir(DOWNLOAD_DIR)
+ANNOT_JSON = find_annotation_json(DOWNLOAD_DIR)
 
-Output yang benar:
-```
-✅ Anotasi berhasil di-clone
-   Jumlah gambar  : 1204
-   Jumlah anotasi : 32443
+print("Image dir :", IMAGE_DIR)
+print("Annotation:", ANNOT_JSON)
 ```
 
 ---
 
-## Step 6 — Ekstrak Script dari Drive
+## Step 5 — Ekstrak Script dari Drive
 
 ```python
 !unzip -q "/content/drive/MyDrive/acne_project/acne_scripts.zip" \
@@ -178,21 +156,14 @@ for s in scripts:
 
 ---
 
-## Step 7 — Konfigurasi Path
+## Step 6 — Konfigurasi Path
 
-> **Jalankan cell ini setiap kali membuka sesi Colab baru** (setelah Step 2–6).
+> **Jalankan cell ini setiap kali membuka sesi Colab baru** setelah Drive, dependencies, dataset, dan script siap.
 
 ```python
 import sys
 from pathlib import Path
 
-# ── Sesuaikan IMAGE_DIR dengan hasil download di Step 4 ────────────
-# Jika pakai Option A (Kaggle):
-IMAGE_DIR = Path(KAGGLE_PATH) / "all_1024"   # sesuaikan subfolder
-# Jika pakai Option B (Google Drive):
-# IMAGE_DIR = Path("/content/acne_dataset/all_1024")
-
-ANNOT_JSON  = Path("/content/acne04v2/Acne04-v2_annotations.json")
 SCRIPTS_DIR = Path("/content/acne_project/projectsegmentasi")
 
 # ── Output — simpan ke Drive agar tidak hilang saat sesi berakhir ──
@@ -235,7 +206,7 @@ else:
 
 ---
 
-## Step 8 — Generate Refined Mask
+## Step 7 — Generate Refined Mask
 
 Buat mask ground truth berbasis deteksi warna lesi.
 **Jalankan sekali saja** — hasil disimpan ke Drive, tidak perlu diulang.
@@ -245,7 +216,7 @@ REFINED_MANIFEST = MASK_DIR / "refined_manifest.csv"
 
 !python "{SCRIPTS_DIR}/refine_masks_color.py" \
   --image-dir       "{IMAGE_DIR}" \
-  --annotation-json "{ANNOT_JSON}" \
+  --annotations-json "{ANNOT_JSON}" \
   --output-dir      "{MASK_DIR}" \
   --apply-preprocessing \
   --max-images 0
@@ -271,7 +242,7 @@ test     181
 
 ---
 
-## Step 9 — Training
+## Step 8 — Training
 
 > Estimasi waktu: **2–3 jam** di GPU T4 untuk 30+90 epoch.
 > Checkpoint disimpan ke Drive tiap epoch — aman kalau sesi putus.
@@ -331,9 +302,9 @@ else:
 
 ---
 
-## Step 10 — Resume Jika Sesi Colab Putus
+## Step 9 — Resume Jika Sesi Colab Putus
 
-1. Jalankan ulang Step 1 (GPU) → Step 2 (Drive) → Step 3 (install) → Step 5 (clone GitHub) → Step 6 (unzip script) → Step 7 (path)
+1. Jalankan ulang Step 1 (GPU) → Step 2 (Drive) → Step 3 (install) → Step 4 (download dataset) → Step 5 (script dari Drive) → Step 6 (path)
 2. Jalankan cell ini:
 
 ```python
@@ -355,7 +326,7 @@ else:
 
 ---
 
-## Step 11 — Lihat Hasil Test Metrics
+## Step 10 — Lihat Hasil Test Metrics
 
 ```python
 metrics_file = OUTPUT_RUN / "metrics.json"
@@ -381,7 +352,7 @@ else:
 
 ---
 
-## Step 12 — Inferensi & Visualisasi
+## Step 11 — Inferensi & Visualisasi
 
 ```python
 CHECKPOINT = OUTPUT_RUN / "best_model.pt"
@@ -427,13 +398,13 @@ Setiap kali membuka Colab baru, cukup jalankan urutan ini (±5 menit):
 Step 1  → Aktifkan GPU
 Step 2  → Mount Drive
 Step 3  → Install dependencies
-Step 5  → Clone GitHub (anotasi)
-Step 6  → Unzip scripts dari Drive
-Step 7  → Konfigurasi path
+Step 4  → Download dataset dari folder Drive
+Step 5  → Ekstrak scripts dari Drive
+Step 6  → Konfigurasi path
 ```
 
 Lalu lanjut ke Step 9 dengan `--resume` jika training belum selesai,
-atau Step 11–12 jika training sudah selesai.
+atau Step 10–11 jika training sudah selesai.
 
 ---
 
@@ -466,11 +437,9 @@ MyDrive/acne_project/
 |---|---|
 | `CUDA not available` | Runtime → Change runtime type → GPU |
 | `CUDA out of memory` | Kurangi `--batch-size` ke `8` |
-| Kaggle download error | Tambahkan Kaggle API key: `kagglehub.login()` |
-| `gdown` folder error | Pastikan link Drive bersifat publik (Anyone with link) |
-| GitHub clone gagal | Cek koneksi internet Colab, coba ulang cell |
-| Script tidak ditemukan | Jalankan ulang Step 6 (unzip dari Drive) |
-| Sesi putus saat training | Jalankan Step 1-2-3-5-6-7 lalu training dengan `--resume` |
+| Dataset tidak terdownload | Pastikan link folder Drive bisa diakses publik, lalu jalankan ulang Step 4 |
+| Script tidak ditemukan | Jalankan ulang Step 5 (ekstrak script dari Drive) |
+| Sesi putus saat training | Jalankan Step 1-2-3-4-5-6 lalu training dengan `--resume` |
 | Dice masih 0 | Naikkan `--seg-weight` ke `1.5`, atau `--weighted-sampler` |
 
 ---
@@ -479,6 +448,4 @@ MyDrive/acne_project/
 
 | Sumber | Link | Isi |
 |---|---|---|
-| Kaggle | `karmagames/acne04-v2` | Gambar + anotasi lengkap |
-| Google Drive | [folder link](https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ) | Gambar |
-| GitHub | [AIpourlapeau/acne04v2](https://github.com/AIpourlapeau/acne04v2) | Anotasi v2 JSON |
+| Google Drive folder | `18yJcHXhzOv7H89t-Lda6phheAicLqMuZ` | Gambar + anotasi JSON |

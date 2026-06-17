@@ -21,6 +21,7 @@ import torch
 from PIL import Image
 
 import train_baseline_dilated_unet as base
+from train_proposal_hybrid_resnet50_malds import ProposalHybridResNet50
 
 
 INDEX_TO_LABEL = {
@@ -58,6 +59,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=320)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument(
+        "--model-type",
+        choices=("baseline", "proposal"),
+        default="baseline",
+        help="Architecture used by the checkpoint.",
+    )
     return parser.parse_args()
 
 
@@ -197,8 +204,14 @@ def main() -> None:
     pred_dir.mkdir(parents=True, exist_ok=True)
     overlay_dir.mkdir(parents=True, exist_ok=True)
 
-    model = base.DilatedUNetAMFM(num_classes=4).to(device)
+    if args.model_type == "proposal":
+        model = ProposalHybridResNet50(num_classes=4, pretrained=False).to(device)
+    else:
+        model = base.DilatedUNetAMFM(num_classes=4).to(device)
+
     state_dict = torch.load(args.checkpoint, map_location=device)
+    if isinstance(state_dict, dict) and "model_state_dict" in state_dict:
+        state_dict = state_dict["model_state_dict"]
     model.load_state_dict(state_dict)
     model.eval()
 

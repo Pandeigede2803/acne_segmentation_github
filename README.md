@@ -413,17 +413,20 @@ python3 -c "import torch; print(torch.__version__); print(torch.backends.mps.is_
 > **Rekomendasi untuk training** — laptop terlalu berat? Gunakan GPU gratis T4 di Google Colab.  
 > Notebook sudah tersedia di: `projectsegmentasi/acne_segmentasi_colab.ipynb`
 
-### 7.1 Persiapan Satu Kali (di Laptop)
+### 7.1 Persiapan Satu Kali
 
-**Step 1 — Zip dataset dan script dari terminal:**
+Dataset diambil langsung dari folder Google Drive:
+
+```text
+https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ
+```
+
+Yang perlu diupload ke `MyDrive/acne_project/` hanya script project.
+
+**Step 1 — Zip script dari terminal:**
 
 ```bash
 cd "/Users/macbookprom1/Kuliah s2/dataset-acne"
-
-# Zip dataset (gambar + anotasi)
-zip -r acne_dataset.zip \
-  datasetacne04/acne_1024/small_1024/ \
-  acne04v2/Acne04-v2_annotations.json
 
 # Zip semua script Python
 zip -r acne_scripts.zip \
@@ -436,11 +439,10 @@ zip -r acne_scripts.zip \
 ```
 MyDrive/
 └── acne_project/          ← buat folder ini di Drive
-    ├── acne_dataset.zip   ← upload file ini
     └── acne_scripts.zip   ← upload file ini
 ```
 
-Cara upload: buka [drive.google.com](https://drive.google.com) → drag & drop kedua file zip ke folder `acne_project/`.
+Cara upload: buka [drive.google.com](https://drive.google.com) → drag & drop `acne_scripts.zip` ke folder `acne_project/`.
 
 **Step 3 — Upload notebook ke Colab:**
 
@@ -472,7 +474,6 @@ VRAM           : 15.0 GB
 
 ```
 MyDrive/acne_project/
-├── acne_dataset.zip
 ├── acne_scripts.zip
 └── output/                          ← dibuat otomatis oleh notebook
     ├── refined_masks_output/
@@ -500,7 +501,7 @@ Jalankan cell-cell berikut secara berurutan:
 |---|---|---|
 | **Setup GPU & Mount Drive** | Cek GPU + koneksi ke Drive | ~30 detik |
 | **Install Dependencies** | Install torch, opencv, dll | ~1 menit |
-| **Unzip Dataset** | Ekstrak dataset ke `/content/` | ~3–5 menit |
+| **Download Dataset** | Download dataset dari folder Google Drive ke `/content/` | ~3–5 menit |
 | **Konfigurasi Path** | Set semua path + validasi | ~5 detik |
 | **Generate Refined Mask** | Buat mask dari warna lesi | ~5–15 menit |
 | **Training (Option A)** | Train model proposal + MA-LDS | ~2–4 jam (T4) |
@@ -637,7 +638,7 @@ Cocok untuk: edit konfigurasi parameter, baca hasil, debugging ringan.
 |---|---|
 | `CUDA not available` | Runtime → Change runtime type → GPU |
 | `CUDA out of memory` | Kurangi `batch-size` ke `8` atau `image-size` ke `224` |
-| Dataset tidak ditemukan | Pastikan zip sudah diunzip: cek cell "Unzip Dataset" |
+| Dataset tidak ditemukan | Jalankan ulang cell "Download Dataset" dan pastikan folder Drive dataset bisa diakses |
 | Sesi putus saat training | Gunakan flag `--resume`, checkpoint ada di Drive |
 | Training sangat lambat | Naikkan `num-workers` ke `4`, atau upgrade ke Colab Pro |
 | `ModuleNotFoundError` | Jalankan ulang cell "Install Dependencies" dan "sys.path" |
@@ -868,15 +869,3 @@ Tren training (Phase 1):
 - **MA-LDS** — Morphology-Aware Label Distribution Smoothing untuk regularisasi klasifikasi
 - **Cohen's Kappa** — metrik agreement yang memperhitungkan kebetulan, lebih adil untuk imbalanced data
 - **Hayashi Scale** — skala severity jerawat 4 tingkat yang dipakai sebagai target klasifikasi
-
-file acne https://drive.google.com/drive/folders/18yJcHXhzOv7H89t-Lda6phheAicLqMuZ
-
-import kagglehub
-
-# Download latest version
-path = kagglehub.dataset_download("karmagames/acne04-v2")
-
-print("Path to dataset files:", path)
-
-
-https://github.com/AIpourlapeau/acne04v2

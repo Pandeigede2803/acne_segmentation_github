@@ -90,7 +90,21 @@ def load_rows(manifest_path: Path) -> list[dict[str, str]]:
     if not manifest_path.exists():
         raise FileNotFoundError(f"Manifest tidak ditemukan: {manifest_path}")
     with manifest_path.open("r", newline="", encoding="utf-8") as handle:
-        return list(csv.DictReader(handle))
+        rows = list(csv.DictReader(handle))
+
+    normalized_rows: list[dict[str, str]] = []
+    for row in rows:
+        image_path = row.get("preprocessed_path") or row.get("image_path")
+        mask_path = row.get("mask_path") or row.get("refined_mask") or row.get("circle_mask")
+        if not image_path:
+            raise KeyError("Manifest harus punya kolom preprocessed_path atau image_path")
+        if not mask_path:
+            raise KeyError("Manifest harus punya kolom mask_path, refined_mask, atau circle_mask")
+        normalized = dict(row)
+        normalized["image_path"] = image_path
+        normalized["mask_path"] = mask_path
+        normalized_rows.append(normalized)
+    return normalized_rows
 
 
 def tensor_from_pil_rgb(image: Image.Image, image_size: int) -> torch.Tensor:
