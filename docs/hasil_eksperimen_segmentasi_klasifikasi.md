@@ -206,6 +206,68 @@ Makna:
 
 ---
 
+### 3.7 Update eksperimen Google Colab - 22 Juni 2026
+
+Eksperimen terbaru dijalankan di Google Colab menggunakan seluruh dataset yang berhasil divalidasi.
+
+Informasi dataset:
+
+```text
+Total gambar = 1457
+Device       = cuda
+```
+
+Distribusi kelas severity:
+
+| Kelas | Jumlah | Persentase |
+|---|---:|---:|
+| `levle0` | 497 | 34.1% |
+| `levle1` | 637 | 43.7% |
+| `levle2` | 186 | 12.8% |
+| `levle3` | 137 | 9.4% |
+
+Hasil validasi pada epoch 120:
+
+```text
+Val Dice = 0.4555
+Val Acc  = 0.4815
+```
+
+Hasil test:
+
+```text
+loss  = 1.1503
+acc   = 0.5000
+kappa = 0.0652
+dice  = 0.4515
+iou   = 0.3082
+```
+
+Interpretasi:
+
+- segmentasi menunjukkan peningkatan signifikan dibanding eksperimen sebelumnya
+- nilai `Dice = 0.4515` dan `IoU = 0.3082` menunjukkan mask prediksi sudah memiliki overlap dengan ground truth
+- model tidak lagi sepenuhnya gagal pada cabang segmentasi
+- klasifikasi masih belum kuat karena `Accuracy = 0.5000` disertai `Kappa = 0.0652`
+- nilai kappa yang sangat rendah menunjukkan prediksi severity belum memiliki kesepakatan yang kuat dengan label asli
+
+Makna:
+
+- penggunaan dataset yang lebih besar dan training lebih panjang membuat cabang segmentasi mulai belajar
+- masalah utama mulai bergeser dari segmentasi yang gagal total menjadi klasifikasi severity yang belum stabil
+- salah satu faktor kuat yang memengaruhi klasifikasi adalah ketidakseimbangan jumlah data antar level severity
+
+Analisis imbalance:
+
+- `levle0` dan `levle1` mendominasi dataset dengan total 1134 gambar
+- `levle2` dan `levle3` hanya berjumlah 323 gambar
+- `levle1` berjumlah sekitar 4.65 kali lebih banyak dibanding `levle3`
+- kondisi ini dapat menyebabkan model bias ke kelas mayoritas, terutama `levle0` dan `levle1`
+
+Dengan kondisi tersebut, accuracy 0.5000 belum cukup untuk menyatakan model klasifikasi sudah baik. Nilai `Cohen's Kappa = 0.0652` lebih menunjukkan bahwa model belum mampu membedakan seluruh level severity secara seimbang.
+
+---
+
 ## 4. Analisis Umum
 
 Dari seluruh eksperimen, pola yang konsisten adalah:
@@ -229,6 +291,15 @@ Pada banyak run:
 Ini mengindikasikan bahwa:
 - model cenderung memprediksi mask hampir kosong
 - atau mask prediksi tidak overlap secara berarti dengan ground truth
+
+Namun pada update eksperimen Google Colab tanggal 22 Juni 2026, segmentasi mulai menunjukkan perbaikan:
+
+```text
+test_dice = 0.4515
+test_iou  = 0.3082
+```
+
+Artinya, cabang segmentasi sudah mulai belajar dan tidak lagi berada pada kondisi gagal total. Meskipun demikian, performa segmentasi masih perlu ditingkatkan agar mask prediksi lebih presisi dan lebih konsisten.
 
 ### 4.3 Kontribusi segmentasi ke hybrid belum optimal
 
@@ -275,6 +346,26 @@ Beberapa kemungkinan penyebab:
 - eksperimen utama masih banyak dilakukan di `200 image`
 - jumlah ini bisa belum cukup untuk segmentasi piksel-level
 
+### 5.5 Distribusi kelas severity tidak seimbang
+
+Pada eksperimen Google Colab tanggal 22 Juni 2026, total dataset yang valid adalah 1457 gambar dengan distribusi:
+
+```text
+levle0 = 497
+levle1 = 637
+levle2 = 186
+levle3 = 137
+```
+
+Distribusi ini tidak seimbang karena `levle0` dan `levle1` jauh lebih dominan dibanding `levle2` dan `levle3`.
+
+Dampaknya:
+
+- model lebih sering melihat contoh dari kelas mayoritas
+- model berpotensi bias memprediksi `levle0` atau `levle1`
+- accuracy bisa terlihat cukup, tetapi kappa tetap rendah
+- kelas minoritas seperti `levle2` dan `levle3` lebih sulit dipelajari
+
 ---
 
 ## 6. Kesimpulan Sementara
@@ -283,10 +374,11 @@ Kesimpulan utama dari hasil eksperimen:
 
 1. Arsitektur hybrid dapat dijalankan end-to-end.
 2. Cabang klasifikasi mampu belajar sebagian.
-3. Cabang segmentasi belum menunjukkan performa yang memadai.
-4. Nilai `Dice` dan `IoU` yang hampir selalu nol menunjukkan bahwa model belum berhasil mempelajari mask lesi secara stabil.
-5. Penggantian backbone ke ResNet-50 belum menyelesaikan masalah segmentasi.
-6. Penggunaan `BCE + Dice Loss` menunjukkan arah yang lebih menjanjikan, tetapi hasilnya masih belum konsisten.
+3. Pada eksperimen awal, cabang segmentasi belum menunjukkan performa yang memadai.
+4. Pada update Google Colab 22 Juni 2026, segmentasi mulai membaik dengan `Dice = 0.4515` dan `IoU = 0.3082`.
+5. Klasifikasi severity masih lemah karena `Accuracy = 0.5000` tetapi `Cohen's Kappa = 0.0652`.
+6. Ketidakseimbangan distribusi kelas severity menjadi dugaan kuat penyebab klasifikasi belum stabil.
+7. Penggunaan backbone ResNet-50 dengan dilated decoder mulai menunjukkan arah yang lebih baik pada segmentasi, tetapi klasifikasi masih perlu diperbaiki.
 
 ---
 
@@ -294,9 +386,11 @@ Kesimpulan utama dari hasil eksperimen:
 
 Implikasi penting bagi paper:
 
-- hasil saat ini belum cukup untuk menyatakan bahwa cabang segmentasi memberikan kontribusi kuat terhadap klasifikasi severity
-- hasil lebih mendukung interpretasi bahwa model saat ini masih dominan bergantung pada fitur global
-- untuk membuktikan manfaat hybrid secara lebih kuat, segmentasi harus terlebih dahulu dibuat lebih stabil
+- hasil terbaru menunjukkan bahwa cabang segmentasi mulai memberikan sinyal pembelajaran yang lebih baik
+- nilai `Dice` dan `IoU` terbaru dapat digunakan sebagai bukti bahwa pipeline segmentasi sudah berkembang dibanding eksperimen awal
+- hasil klasifikasi belum cukup kuat karena accuracy masih sedang dan kappa sangat rendah
+- untuk membuktikan manfaat hybrid secara lebih kuat, perlu analisis tambahan terhadap confusion matrix dan distribusi prediksi per kelas
+- imbalance kelas severity perlu dibahas sebagai faktor yang memengaruhi performa klasifikasi
 
 ---
 
@@ -304,10 +398,12 @@ Implikasi penting bagi paper:
 
 Langkah yang paling masuk akal berikutnya:
 
-1. menambah jumlah data eksperimen
-2. mengecek visualisasi mask prediksi vs ground truth
-3. menguji loss segmentasi yang lebih kuat secara lebih sistematis
-4. membandingkan run dalam format tabel yang konsisten
+1. mengecek confusion matrix klasifikasi severity
+2. mengecek apakah prediksi model bias ke `levle0` atau `levle1`
+3. menggunakan class weighting atau weighted sampler untuk mengatasi imbalance
+4. mengecek visualisasi mask prediksi vs ground truth
+5. menguji loss segmentasi dan loss klasifikasi secara lebih sistematis
+6. membandingkan run dalam format tabel yang konsisten
 
 Langkah yang sangat penting:
 
@@ -326,16 +422,15 @@ Karena tanpa melihat mask secara langsung, sulit memastikan apakah model:
 Secara sederhana:
 
 ```text
-Klasifikasi: belajar sebagian
-Segmentasi: belum stabil
-Hybrid: sudah terbentuk, tetapi kontribusi segmentasi belum optimal
+Segmentasi: mulai membaik pada eksperimen terbaru
+Klasifikasi: masih lemah dan kemungkinan terpengaruh imbalance kelas
+Hybrid: sudah berjalan, tetapi kontribusi segmentasi ke klasifikasi masih perlu dibuktikan lebih kuat
 ```
 
 Dengan demikian, hasil eksperimen saat ini lebih tepat dibaca sebagai:
 
 ```text
-proof-of-concept pipeline hybrid yang berhasil dijalankan,
-namun cabang segmentasi masih memerlukan perbaikan signifikan
-agar mampu memberi dampak nyata pada hasil akhir klasifikasi severity
+pipeline hybrid yang berhasil dijalankan dan mulai menunjukkan peningkatan segmentasi,
+namun klasifikasi severity masih perlu diperbaiki terutama karena distribusi kelas tidak seimbang
+dan nilai Cohen's Kappa masih rendah
 ```
-

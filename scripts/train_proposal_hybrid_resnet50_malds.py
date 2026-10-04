@@ -61,6 +61,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet ResNet-50 weights if available.")
     parser.add_argument("--weighted-sampler", action="store_true", help="Oversample minority classes in train split.")
+    parser.add_argument("--class-weighting", choices=("balanced", "none"), default="balanced",
+                        help="Classification loss weights: N_train / (4 * class_count), or all ones.")
     parser.add_argument("--resume", action="store_true", help="Resume from last_checkpoint.pt in output-dir.")
     return parser.parse_args()
 
@@ -384,6 +386,8 @@ def run_epoch(
     mse = nn.MSELoss()
     totals = {key: 0.0 for key in ["loss", "seg_loss", "cls_loss", "morph_loss", "dice", "iou", "acc", "kappa"]}
     count = 0
+    all_logits: list[torch.Tensor] = []
+    all_labels: list[torch.Tensor] = []
 
     for batch in loader:
         images = batch["image"].to(device)
@@ -408,7 +412,8 @@ def run_epoch(
 
         dice, iou = dice_iou_from_logits(outputs["seg_logits"], masks)
         acc = (outputs["class_logits"].argmax(dim=1) == labels).float().mean()
-        kappa = cohen_kappa_from_logits(outputs["class_logits"], labels)
+        all_logits.append(outputs["class_logits"].detach().cpu())
+        all_labels.append(labels.detach().cpu())
         batch_size = images.size(0)
         count += batch_size
         totals["loss"] += loss.item() * batch_size
@@ -418,9 +423,10 @@ def run_epoch(
         totals["dice"] += dice.item() * batch_size
         totals["iou"] += iou.item() * batch_size
         totals["acc"] += acc.item() * batch_size
-        totals["kappa"] += kappa.item() * batch_size
-
-    return {key: value / max(1, count) for key, value in totals.items()}
+    metrics = {key: value / max(1, count) for key, value in totals.items()}
+    if all_labels:
+        metrics["kappa"] = cohen_kappa_from_logits(torch.cat(all_logits), torch.cat(all_labels)).item()
+    return metrics
 
 
 def build_loaders(args: argparse.Namespace, rows: list[dict[str, str]]) -> tuple[DataLoader, DataLoader, DataLoader, torch.Tensor]:
@@ -428,16 +434,24 @@ def build_loaders(args: argparse.Namespace, rows: list[dict[str, str]]) -> tuple
     val_rows = [row for row in rows if row["split"] == "val"]
     test_rows = [row for row in rows if row["split"] == "test"]
     train_counts = Counter(int(row["label_index"]) for row in train_rows)
+    for split_name, split_rows in [("train", train_rows), ("val", val_rows), ("test", test_rows)]:
+        if not split_rows:
+            raise ValueError(f"Split {split_name} kosong. Periksa manifest.")
+        if any(int(row["label_index"]) not in range(4) for row in split_rows):
+            raise ValueError(f"Label pada split {split_name} harus 0 sampai 3.")
+    if any(train_counts.get(idx, 0) == 0 for idx in range(4)):
+        raise ValueError("Train split harus berisi seluruh kelas 0 sampai 3 untuk eksperimen imbalance.")
     total_train = sum(train_counts.values())
-    class_weights = torch.tensor(
-        [total_train / max(1, 4 * train_counts.get(idx, 0)) for idx in range(4)],
+    balanced_weights = torch.tensor(
+        [total_train / (4 * train_counts[idx]) for idx in range(4)],
         dtype=torch.float32,
     )
+    class_weights = balanced_weights if args.class_weighting == "balanced" else torch.ones(4)
 
     sampler = None
     shuffle = True
     if args.weighted_sampler:
-        row_weights = [class_weights[int(row["label_index"])].item() for row in train_rows]
+        row_weights = [balanced_weights[int(row["label_index"])].item() for row in train_rows]
         sampler = WeightedRandomSampler(row_weights, num_samples=len(row_weights), replacement=True)
         shuffle = False
 
@@ -479,12 +493,15 @@ def main() -> None:
     rows = load_rows(args.manifest)
     train_loader, val_loader, test_loader, class_weights = build_loaders(args, rows)
     class_weights = class_weights.to(device)
+    train_class_counts = Counter(int(row["label_index"]) for row in rows if row["split"] == "train")
 
     print("🚀 Proposal hybrid training: ResNet50 + Spatial Attention + Decoder + AMFM + MA-LDS")
     print(f"🧾 Manifest: {args.manifest}")
     print(f"🖥️ Device: {device}")
     print(f"✅ Split: train={len(train_loader.dataset)}, val={len(val_loader.dataset)}, test={len(test_loader.dataset)}")
     print(f"⚖️ Class weights: {[round(x, 4) for x in class_weights.detach().cpu().tolist()]}")
+    print(f"Train class counts: {[train_class_counts[idx] for idx in range(4)]}")
+    print(f"Class weighting: {args.class_weighting}; weighted sampler: {args.weighted_sampler}")
     print(f"🧠 Phase 1: freeze encoder, epochs={args.phase1_epochs}, lr={args.phase1_lr}")
     print(f"🧠 Phase 2: full fine-tuning, epochs={args.phase2_epochs}, lr={args.phase2_lr}")
 
@@ -563,6 +580,8 @@ def main() -> None:
             "encoder": "resnet50",
             "fusion": "amfm",
             "classification_loss": "morphology_aware_label_distribution_kl",
+            "class_weights": class_weights.detach().cpu().tolist(),
+            "train_class_counts": [train_class_counts[idx] for idx in range(4)],
             "segmentation_loss": "bce_plus_dice",
         },
         "best_val_loss": best_val_loss,
