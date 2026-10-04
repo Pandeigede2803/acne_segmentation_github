@@ -514,7 +514,8 @@ def main() -> None:
     optimizer = torch.optim.SGD((param for param in model.parameters() if param.requires_grad), lr=args.phase1_lr, momentum=0.9)
 
     if args.resume and last_checkpoint_path.exists():
-        checkpoint = torch.load(last_checkpoint_path, map_location=device)
+        # Full loading is required for legacy Path metadata in this run's own checkpoint.
+        checkpoint = torch.load(last_checkpoint_path, map_location=device, weights_only=False)
         model.load_state_dict(checkpoint["model_state_dict"])
         start_epoch = int(checkpoint["epoch"]) + 1
         best_val_loss = float(checkpoint["best_val_loss"])
@@ -560,14 +561,15 @@ def main() -> None:
                 "best_val_loss": best_val_loss,
                 "model_state_dict": model.state_dict(),
                 "history": history,
-                "args": vars(args),
+                "args": {key: str(value) if isinstance(value, Path) else value
+                         for key, value in vars(args).items()},
             },
             last_checkpoint_path,
         )
         save_json({"history": history, "best_val_loss": best_val_loss}, args.output_dir / "history_partial.json")
 
     print("🧪 Evaluasi akhir test set")
-    model.load_state_dict(torch.load(best_model_path, map_location=device))
+    model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
     with torch.no_grad():
         test_metrics = run_epoch(model, test_loader, device, optimizer=None, args=args, class_weights=class_weights)
 
