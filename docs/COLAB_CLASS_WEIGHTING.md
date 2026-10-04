@@ -97,8 +97,7 @@ EXPERIMENT_DATE = "2026-10-04"
 CLASS_WEIGHTING = "none"
 RUN_DIR = TRAIN_DIR / f"{EXPERIMENT_DATE}_proposal_class_weighting_{CLASS_WEIGHTING}"
 
-if (RUN_DIR / "last_checkpoint.pt").exists():
-    raise RuntimeError("Folder run sudah berisi checkpoint. Pilih nama RUN_DIR baru.")
+RESUME = (RUN_DIR / "last_checkpoint.pt").exists()
 
 cmd = [
     sys.executable, str(TRAIN_SCRIPT_A),
@@ -114,12 +113,20 @@ cmd = [
     "--num-workers", str(NUM_WORKERS),
     "--seed", "42",
 ]
+if RESUME:
+    cmd.append("--resume")
+    print("Melanjutkan dari checkpoint terakhir.")
 subprocess.run(cmd, check=True)
 ```
 
 Gunakan manifest, jumlah epoch, batch size, dan seed yang sama pada kedua run.
 Mulai dari awal untuk setiap run. Model terbaik tetap dipilih berdasarkan
-`val_loss`, seperti setup sebelumnya. Hindari memilih konfigurasi berdasarkan
+`val_loss`, seperti setup sebelumnya. Jika run terputus, jalankan ulang cell
+dengan mode yang sama untuk melanjutkan checkpoint secara otomatis. Pastikan
+proses training sebelumnya sudah berhenti. Untuk mengulang eksperimen dari
+awal, gunakan ID tanggal atau folder output baru. Resume pada script saat ini
+memuat bobot, history, dan nomor epoch; state optimizer tidak dipulihkan.
+Hindari memilih konfigurasi berdasarkan
 hasil test; gunakan validasi untuk pemilihan konfigurasi.
 
 ## Cell Perbandingan Hasil
