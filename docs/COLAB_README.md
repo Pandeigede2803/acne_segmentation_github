@@ -188,7 +188,7 @@ SCRIPTS_DIR = Path("/content/acne_project/projectsegmentasi")
 
 # ── Output — simpan ke Drive agar tidak hilang saat sesi berakhir ──
 OUTPUT_DIR  = Path("/content/drive/MyDrive/acne_project/output")
-MASK_DIR    = OUTPUT_DIR / "refined_masks_output"
+MASK_DIR    = OUTPUT_DIR / "refined_masks_output_letterbox_v2"
 TRAIN_DIR   = OUTPUT_DIR / "training_runs"
 INFER_DIR   = OUTPUT_DIR / "predictions"
 
@@ -238,7 +238,8 @@ REFINED_MANIFEST = MASK_DIR / "refined_manifest.csv"
   --image-dir       "{IMAGE_DIR}" \
   --annotations-json "{ANNOT_JSON}" \
   --output-dir      "{MASK_DIR}" \
-  --apply-preprocessing \
+  --resize-mode letterbox \
+  --preprocessing-mode none \
   --max-images 0
 
 # Verifikasi
@@ -268,7 +269,7 @@ test     181
 > Checkpoint disimpan ke Drive tiap epoch — aman kalau sesi putus.
 
 ```python
-OUTPUT_RUN = TRAIN_DIR / "proposal_hybrid_v1"
+OUTPUT_RUN = TRAIN_DIR / "proposal_hybrid_letterbox_v2"
 
 !python "{SCRIPTS_DIR}/train_proposal_hybrid_resnet50_malds.py" \
   --manifest        "{REFINED_MANIFEST}" \

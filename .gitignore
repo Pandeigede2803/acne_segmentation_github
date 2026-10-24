@@ -6,9 +6,10 @@ __pycache__/
 *.egg-info/
 
 # Dataset & output besar — jangan push ke GitHub
-dataset/
-output/
-runs/
+/dataset/
+/datasetacne04/
+/output*/
+/runs/
 *.pt
 *.pth
 *.ckpt
@@ -35,3 +36,4 @@ preprocessed_*/
 .venv/
 venv/
 env/
+

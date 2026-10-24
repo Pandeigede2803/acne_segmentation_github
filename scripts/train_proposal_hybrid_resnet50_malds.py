@@ -60,6 +60,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet ResNet-50 weights if available.")
+    parser.add_argument("--input-normalization", choices=("auto", "none", "imagenet"), default="auto",
+                        help="auto applies ImageNet normalization when --pretrained is used")
     parser.add_argument("--weighted-sampler", action="store_true", help="Oversample minority classes in train split.")
     parser.add_argument("--class-weighting", choices=("balanced", "none"), default="balanced",
                         help="Classification loss weights: N_train / (4 * class_count), or all ones.")
@@ -115,6 +117,14 @@ def tensor_from_pil_rgb(image: Image.Image, image_size: int) -> torch.Tensor:
     tensor = torch.frombuffer(bytearray(image.tobytes()), dtype=torch.uint8)
     tensor = tensor.view(image_size, image_size, 3)
     return tensor.permute(2, 0, 1).float() / 255.0
+
+
+def normalize_image_tensor(tensor: torch.Tensor, mode: str) -> torch.Tensor:
+    if mode == "imagenet":
+        mean = tensor.new_tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+        std = tensor.new_tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+        return (tensor - mean) / std
+    return tensor
 
 
 def tensor_from_pil_mask(mask: Image.Image, image_size: int) -> torch.Tensor:
@@ -195,7 +205,10 @@ class PreprocessedAcneDataset(Dataset):
 
         mask_tensor = tensor_from_pil_mask(mask, self.image_size)
         return {
-            "image": tensor_from_pil_rgb(image, self.image_size),
+            "image": normalize_image_tensor(
+                tensor_from_pil_rgb(image, self.image_size),
+                getattr(self.args, "resolved_input_normalization", "none"),
+            ),
             "mask": mask_tensor,
             "label": torch.tensor(int(row["label_index"]), dtype=torch.long),
             "morph_target": mask_morphology(mask_tensor),
@@ -485,6 +498,11 @@ def save_json(data: dict, path: Path) -> None:
 def main() -> None:
     args = parse_args()
     set_seed(args.seed)
+    args.resolved_input_normalization = (
+        "imagenet" if args.input_normalization == "auto" and args.pretrained
+        else "none" if args.input_normalization == "auto"
+        else args.input_normalization
+    )
     device = resolve_device(args.device)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     best_model_path = args.output_dir / "best_model.pt"
@@ -498,6 +516,7 @@ def main() -> None:
     print("🚀 Proposal hybrid training: ResNet50 + Spatial Attention + Decoder + AMFM + MA-LDS")
     print(f"🧾 Manifest: {args.manifest}")
     print(f"🖥️ Device: {device}")
+    print(f"🖼️ Input normalization: {args.resolved_input_normalization}")
     print(f"✅ Split: train={len(train_loader.dataset)}, val={len(val_loader.dataset)}, test={len(test_loader.dataset)}")
     print(f"⚖️ Class weights: {[round(x, 4) for x in class_weights.detach().cpu().tolist()]}")
     print(f"Train class counts: {[train_class_counts[idx] for idx in range(4)]}")
@@ -511,7 +530,15 @@ def main() -> None:
     history: list[dict[str, float | int | str]] = []
     total_epochs = args.phase1_epochs + args.phase2_epochs
 
-    optimizer = torch.optim.SGD((param for param in model.parameters() if param.requires_grad), lr=args.phase1_lr, momentum=0.9)
+    phase1_optimizer: torch.optim.Optimizer | None = None
+    phase2_optimizer: torch.optim.Optimizer | None = None
+
+    model.set_encoder_trainable(False)
+    phase1_optimizer = torch.optim.SGD(
+        (param for param in model.parameters() if param.requires_grad), lr=args.phase1_lr, momentum=0.9
+    )
+    model.set_encoder_trainable(True)
+    phase2_optimizer = torch.optim.SGD(model.parameters(), lr=args.phase2_lr, momentum=0.9)
 
     if args.resume and last_checkpoint_path.exists():
         # Full loading is required for legacy Path metadata in this run's own checkpoint.
@@ -520,7 +547,25 @@ def main() -> None:
         start_epoch = int(checkpoint["epoch"]) + 1
         best_val_loss = float(checkpoint["best_val_loss"])
         history = checkpoint["history"]
+        if "phase1_optimizer_state_dict" in checkpoint:
+            phase1_optimizer.load_state_dict(checkpoint["phase1_optimizer_state_dict"])
+        if "phase2_optimizer_state_dict" in checkpoint:
+            phase2_optimizer.load_state_dict(checkpoint["phase2_optimizer_state_dict"])
+        if "phase1_optimizer_state_dict" not in checkpoint or "phase2_optimizer_state_dict" not in checkpoint:
+            print("⚠️ Checkpoint lama tidak menyimpan state optimizer; momentum dimulai ulang.")
+        if "torch_rng_state" in checkpoint:
+            torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
+        if torch.cuda.is_available() and checkpoint.get("cuda_rng_state") is not None:
+            torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state"])
+        if "python_rng_state" in checkpoint:
+            random.setstate(checkpoint["python_rng_state"])
         print(f"🔁 Resume dari epoch {start_epoch}")
+
+        if start_epoch > total_epochs:
+            raise ValueError(
+                f"Checkpoint sudah mencapai epoch {start_epoch - 1}, sama dengan/lebih dari batas {total_epochs}. "
+                "Naikkan jumlah epoch atau gunakan output-dir baru untuk eksperimen baru."
+            )
 
     for epoch in range(start_epoch, total_epochs + 1):
         phase = "phase1_freeze" if epoch <= args.phase1_epochs else "phase2_unfreeze"
@@ -530,7 +575,8 @@ def main() -> None:
         else:
             model.set_encoder_trainable(True)
             lr = args.phase2_lr
-        optimizer = torch.optim.SGD((param for param in model.parameters() if param.requires_grad), lr=lr, momentum=0.9)
+        optimizer = phase1_optimizer if phase == "phase1_freeze" else phase2_optimizer
+        assert optimizer is not None
 
         print(f"📘 Epoch {epoch:03d}/{total_epochs} | {phase} | lr={lr}")
         train_metrics = run_epoch(model, train_loader, device, optimizer, args, class_weights)
@@ -560,6 +606,11 @@ def main() -> None:
                 "epoch": epoch,
                 "best_val_loss": best_val_loss,
                 "model_state_dict": model.state_dict(),
+                "phase1_optimizer_state_dict": phase1_optimizer.state_dict(),
+                "phase2_optimizer_state_dict": phase2_optimizer.state_dict(),
+                "python_rng_state": random.getstate(),
+                "torch_rng_state": torch.get_rng_state(),
+                "cuda_rng_state": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
                 "history": history,
                 "args": {key: str(value) if isinstance(value, Path) else value
                          for key, value in vars(args).items()},
@@ -585,6 +636,7 @@ def main() -> None:
             "class_weights": class_weights.detach().cpu().tolist(),
             "train_class_counts": [train_class_counts[idx] for idx in range(4)],
             "segmentation_loss": "bce_plus_dice",
+            "input_normalization": args.resolved_input_normalization,
         },
         "best_val_loss": best_val_loss,
         "test_metrics": test_metrics,

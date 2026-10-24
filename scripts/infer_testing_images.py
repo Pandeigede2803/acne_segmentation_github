@@ -59,6 +59,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image-size", type=int, default=320)
     parser.add_argument("--threshold", type=float, default=0.5)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
+    parser.add_argument("--input-normalization", choices=("auto", "none", "imagenet"), default="auto",
+                        help="auto membaca metrics.json di samping checkpoint; fallback ke none")
     parser.add_argument(
         "--model-type",
         choices=("baseline", "proposal"),
@@ -124,6 +126,29 @@ def image_to_tensor(image: Image.Image, image_size: int) -> torch.Tensor:
     image_tensor = torch.frombuffer(bytearray(image.tobytes()), dtype=torch.uint8)
     image_tensor = image_tensor.view(image_size, image_size, 3)
     return image_tensor.permute(2, 0, 1).float() / 255.0
+
+
+def resolve_input_normalization(args: argparse.Namespace) -> str:
+    if args.input_normalization != "auto":
+        return args.input_normalization
+    metrics_path = args.checkpoint.parent / "metrics.json"
+    if metrics_path.exists():
+        try:
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            mode = metrics.get("config", {}).get("input_normalization", "none")
+            if mode in {"none", "imagenet"}:
+                return mode
+        except (OSError, json.JSONDecodeError):
+            pass
+    return "none"
+
+
+def normalize_image_tensor(tensor: torch.Tensor, mode: str) -> torch.Tensor:
+    if mode == "imagenet":
+        mean = tensor.new_tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
+        std = tensor.new_tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
+        return (tensor - mean) / std
+    return tensor
 
 
 def mask_to_tensor(mask_path: Path, image_size: int) -> torch.Tensor:
@@ -194,6 +219,7 @@ def cohen_kappa_from_pairs(true_labels: list[int], pred_labels: list[int], num_c
 def main() -> None:
     args = parse_args()
     device = base.resolve_device(args.device)
+    input_normalization = resolve_input_normalization(args)
     rows = load_rows(args.manifest, args.split)
 
     if not args.checkpoint.exists():
@@ -230,6 +256,7 @@ def main() -> None:
                 if image.size != (args.image_size, args.image_size):
                     image = image.resize((args.image_size, args.image_size), Image.Resampling.LANCZOS)
                 image_tensor = image_to_tensor(image, args.image_size).unsqueeze(0).to(device)
+                image_tensor = normalize_image_tensor(image_tensor, input_normalization)
 
                 outputs = model(image_tensor)
                 seg_prob = torch.sigmoid(outputs["seg_logits"])[0, 0].cpu()
@@ -291,6 +318,7 @@ def main() -> None:
         "image_size": args.image_size,
         "threshold": args.threshold,
         "device": str(device),
+        "input_normalization": input_normalization,
         "total_images": len(results),
         "classification_accuracy": correct / max(1, len(true_labels)),
         "classification_kappa": cohen_kappa_from_pairs(true_labels, pred_labels) if true_labels else "",

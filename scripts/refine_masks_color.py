@@ -15,7 +15,7 @@ Pendekatan baru:
 Output:
 - circle_masks/<filename>.png        : mask lingkaran asli
 - refined_masks/<filename>.png       : mask yang sudah diperhalus
-- preprocessed_images/<filename>.jpg : gambar preprocessed (opsional, --apply-preprocessing)
+- preprocessed_images/<filename>.jpg : input training resized; transform warna legacy opsional
 - visualizations/<filename>.png      : overlay mask langsung di atas gambar asli
 - refined_manifest.csv               : manifest baru siap untuk training
 
@@ -116,21 +116,52 @@ def build_circle_mask(
     src_h: int,
     crop_box: tuple[int, int, int, int],
     target_size: int,
+    resize_mode: str = "stretch",
 ) -> np.ndarray:
     left, top, right, bottom = crop_box
     crop_w = max(1, right - left)
     crop_h = max(1, bottom - top)
-    scale_x = target_size / crop_w
-    scale_y = target_size / crop_h
-    r_scale = 0.5 * (scale_x + scale_y)
+    if resize_mode == "letterbox":
+        scale = min(target_size / crop_w, target_size / crop_h)
+        resized_w = max(1, int(round(crop_w * scale)))
+        resized_h = max(1, int(round(crop_h * scale)))
+        offset_x = (target_size - resized_w) // 2
+        offset_y = (target_size - resized_h) // 2
+        scale_x = scale_y = r_scale = scale
+    elif resize_mode == "stretch":
+        scale_x = target_size / crop_w
+        scale_y = target_size / crop_h
+        r_scale = 0.5 * (scale_x + scale_y)
+        offset_x = offset_y = 0
+    else:
+        raise ValueError(f"Resize mode tidak dikenal: {resize_mode}")
 
     mask = np.zeros((target_size, target_size), dtype=np.uint8)
     for cx, cy, radius in circles:
-        tx = int((cx - left) * scale_x)
-        ty = int((cy - top) * scale_y)
+        tx = int((cx - left) * scale_x) + offset_x
+        ty = int((cy - top) * scale_y) + offset_y
         tr = max(1, int(radius * r_scale))
         cv2.circle(mask, (tx, ty), tr, 255, -1)
     return mask
+
+
+def resize_to_square(image: np.ndarray, target_size: int, mode: str) -> np.ndarray:
+    """Resize ke kanvas persegi; letterbox menjaga rasio aspek sumber."""
+    if mode == "stretch":
+        return cv2.resize(image, (target_size, target_size), interpolation=cv2.INTER_LANCZOS4)
+    if mode != "letterbox":
+        raise ValueError(f"Resize mode tidak dikenal: {mode}")
+
+    height, width = image.shape[:2]
+    scale = min(target_size / width, target_size / height)
+    resized_w = max(1, int(round(width * scale)))
+    resized_h = max(1, int(round(height * scale)))
+    resized = cv2.resize(image, (resized_w, resized_h), interpolation=cv2.INTER_LANCZOS4)
+    left = (target_size - resized_w) // 2
+    top = (target_size - resized_h) // 2
+    right = target_size - resized_w - left
+    bottom = target_size - resized_h - top
+    return cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_REFLECT_101)
 
 
 def refine_mask_with_red(
@@ -431,7 +462,8 @@ def process_dataset(
     vis_per_level: int,
     seed: int,
     args_lab_sigma: float = 1.2,
-    do_preprocessing: bool = False,
+    preprocessing_mode: str = "none",
+    resize_mode: str = "letterbox",
     denoise_size: int = 3,
     sharpen_radius: float = 1.6,
     sharpen_percent: int = 140,
@@ -446,10 +478,8 @@ def process_dataset(
     refined_dir.mkdir(exist_ok=True)
     vis_dir.mkdir(exist_ok=True)
 
-    preproc_dir = None
-    if do_preprocessing:
-        preproc_dir = output_dir / "preprocessed_images"
-        preproc_dir.mkdir(exist_ok=True)
+    preproc_dir = output_dir / "preprocessed_images"
+    preproc_dir.mkdir(exist_ok=True)
 
     print(f"Membaca anotasi dari {annotations_json}")
     circles_by_file, size_by_file = load_annotations(annotations_json)
@@ -485,6 +515,8 @@ def process_dataset(
     print(f"\nTotal gambar ditemukan : {len(all_paths)}")
     print(f"Target size            : {target_size}x{target_size}")
     print(f"Crop ratio             : {crop_ratio}")
+    print(f"Resize mode            : {resize_mode}")
+    print(f"Preprocessing mode      : {preprocessing_mode}")
     print(f"Vis per level          : {vis_per_level}\n")
 
     # Assign train/val/test split secara stratified per level
@@ -516,23 +548,23 @@ def process_dataset(
 
         left, top, right, bottom = crop_box
         bgr_cropped  = bgr[top:bottom, left:right]
-        bgr_resized  = cv2.resize(bgr_cropped, (target_size, target_size),
-                                   interpolation=cv2.INTER_LANCZOS4)
+        bgr_resized = resize_to_square(bgr_cropped, target_size, resize_mode)
 
         # Mask digenerate dari gambar ORIGINAL (warna asli, belum di-preprocess)
-        circle_mask           = build_circle_mask(circles, src_w, src_h, crop_box, target_size)
+        circle_mask = build_circle_mask(circles, src_w, src_h, crop_box, target_size, resize_mode)
         refined_mask, fallback = refine_mask_with_red(bgr_resized, circle_mask,
                                                        morph_kernel, min_pixel_ratio,
                                                        args_lab_sigma)
 
-        # Simpan gambar preprocessed untuk input training (opsional)
-        preproc_path = None
-        if do_preprocessing and preproc_dir is not None:
-            bgr_preprocessed = apply_preprocessing(bgr_resized, denoise_size,
-                                                    sharpen_radius, sharpen_percent)
-            preproc_path = preproc_dir / fname
-            cv2.imwrite(str(preproc_path), bgr_preprocessed,
-                        [cv2.IMWRITE_JPEG_QUALITY, 95])
+        # Simpan gambar input training. Mode none hanya resize/letterbox tanpa perubahan warna.
+        preproc_path = preproc_dir / fname
+        if preprocessing_mode == "legacy":
+            training_image = apply_preprocessing(bgr_resized, denoise_size, sharpen_radius, sharpen_percent)
+        elif preprocessing_mode == "none":
+            training_image = bgr_resized
+        else:
+            raise ValueError(f"Preprocessing mode tidak dikenal: {preprocessing_mode}")
+        cv2.imwrite(str(preproc_path), training_image, [cv2.IMWRITE_JPEG_QUALITY, 95])
 
         if fallback:
             stats["fallback"] += 1
@@ -573,6 +605,8 @@ def process_dataset(
             "circle_area":       c_area,
             "refined_area":      r_area,
             "fallback":          int(fallback),
+            "resize_mode":       resize_mode,
+            "preprocessing_mode": preprocessing_mode,
         })
 
         if (idx + 1) % 100 == 0:
@@ -616,6 +650,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--target-size",     type=int,   default=320)
     parser.add_argument("--crop-ratio",      type=float, default=1.0)
+    parser.add_argument("--resize-mode", choices=("letterbox", "stretch"), default="letterbox",
+                        help="letterbox menjaga rasio aspek; stretch meregangkan ke persegi")
     parser.add_argument("--morph-kernel",    type=int,   default=5,
                         help="Ukuran kernel morphological closing/opening")
     parser.add_argument("--min-pixel-ratio", type=float, default=0.02,
@@ -632,8 +668,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-ratio",       type=float, default=0.15)
 
     # Preprocessing gambar untuk training
+    parser.add_argument("--preprocessing-mode", choices=("none", "legacy"), default="none",
+                        help="none: simpan gambar resized tanpa perubahan warna; legacy: equalize+denoise+sharpen")
     parser.add_argument("--apply-preprocessing", action="store_true",
-                        help="Simpan juga gambar preprocessed (equalize+denoise+sharpen) untuk input training")
+                        help="Alias kompatibilitas untuk --preprocessing-mode legacy")
     parser.add_argument("--denoise-size",    type=int,   default=3,
                         help="Ukuran kernel median filter")
     parser.add_argument("--sharpen-radius",  type=float, default=1.6,
@@ -689,6 +727,7 @@ def main() -> None:
     print(f"Pus kuning     : H=[{args.pus_h_low_yellow}, {args.pus_h_high_yellow}]  S<={args.pus_s_max_yellow}  V>={args.pus_v_min_yellow}")
     print()
 
+    preprocessing_mode = "legacy" if args.apply_preprocessing else args.preprocessing_mode
     process_dataset(
         image_dir         = args.image_dir,
         annotations_json  = args.annotations_json,
@@ -701,7 +740,8 @@ def main() -> None:
         vis_per_level     = args.vis_per_level,
         seed              = args.seed,
         args_lab_sigma    = args.lab_sigma,
-        do_preprocessing  = args.apply_preprocessing,
+        preprocessing_mode = preprocessing_mode,
+        resize_mode         = args.resize_mode,
         denoise_size      = args.denoise_size,
         sharpen_radius    = args.sharpen_radius,
         sharpen_percent   = args.sharpen_percent,
