@@ -1,0 +1,1060 @@
+﻿PROPOSAL TESIS
+
+
+KERANGKA KERJA HIBRIDA SEGMENTASI LESI PRESISI DAN KLASIFIKASI KEPARAHAN JERAWAT BERBASIS DEEP REPRESENTATION LEARNING
+
+
+
+
+
+
+  
+
+
+
+
+
+OLEH
+
+
+PANDE I GEDE SUDIAHNA
+NIM. 252011010
+
+
+
+
+MAGISTER KOMPUTER
+PROGRAM STUDI (S2) SISTEM INFORMASI
+INSTITUT TEKNOLOGI DAN BISNIS STIKOM BALI
+TAHUN 2026
+  
+________________
+
+________________
+  
+
+
+
+DAFTAR ISI
+
+
+DAFTAR ISI        2
+DAFTAR TABEL        4
+DAFTAR GAMBAR        5
+DAFTAR LAMPIRAN        6
+BAB I
+PENDAHULUAN        1
+1.1 Latar Belakang Masalah        1
+1.2 Rumusan Masalah        2
+1.3 Tujuan Penelitian        2
+1.4 Batasan Penelitian        3
+1.5 Manfaat Penelitian        3
+1.6 Novelty (Kebaharuan)        3
+BAB II
+TINJAUAN PUSTAKA        5
+2.1 State of the Art        5
+2.2 Tinjauan Pustaka        6
+BAB III
+LANDASAN TEORI        8
+3.1 Acne Vulgaris dan Sistem Penilaian Keparahan        8
+3.2 Deep Learning untuk Analisis Citra Medis        8
+3.3 Arsitektur Jaringan yang Digunakan        8
+3.3.1 Dilated UNet        8
+3.3.2 Mekanisme Atensi Spasial        8
+3.3.3 ResNet        8
+3.4 Label Distribution Learning (LDL)        8
+3.4.1 Adaptive Morphology-Aware Fusion Module (AMFM)        9
+3.4.2 Morphology-Aware Label Distribution Smoothing (MA-LDS)        9
+3.5 Koefisien Kesepakatan Cohen’s Kappa        10
+3.6 Dataset Benchmark: ACNE04-v2        10
+3.7 Refined Mask Generation via Adaptive Color Segmentation        10
+3.7.1 CIE L*a*b*: Deteksi Kemerahan Relatif        10
+3.7.2 HSV: Deteksi Rentang Warna Absolut        11
+3.7.3 Pembentukan Refined Mask        11
+3.7.4 Ekstraksi Fitur Morfologi untuk MA-LDS        12
+3.8 Penanganan Ketidakseimbangan Kelas        13
+BAB IV
+METODE PENELITIAN        14
+4.1 Jenis dan Pendekatan Penelitian        14
+4.2 Bahan atau Materi Penelitian        14
+4.3 Alat Penelitian        14
+4.4 Alur Penelitian        15
+4.5 Variabel Penelitian        24
+4.6 Analisis Hasil        25
+BAB V
+JADWAL PENELITIAN        26
+DAFTAR PUSTAKA        27
+LAMPIRAN        28
+
+
+
+
+
+
+
+
+DAFTAR TABEL
+
+
+Tabel 2.1 Perbandingan Penelitian State of the Art Penilaian Keparahan Jerawat Otomatis        5
+Tabel 3.1 Fitur Morfologi untuk MA-LDS        12
+Tabel 3.2 Perbandingan Detail ACNE04 vs ACNE04-v2        12
+
+
+
+Tabel 4.1 Rasio Pembagian Data        19
+Tabel 4.2 Konfigurasi Varian Model pada Ablation Study        21
+Tabel 5.1 Jadwal Kegiatan Proposal Penelitian Tesis        23
+Tabel A.1 Standar Kriteria Hayashi        28
+Tabel A.2 Distribusi Dataset ACNE04-v2        29
+Tabel A.3 Statistik Perbandingan Anotasi Dataset        30
+
+
+        
+        
+DAFTAR GAMBAR
+
+
+Gambar 4.1 Flowchart Alur Global Penelitian        15
+Gambar 4.2 Flowchart Prapemprosesan Dataset (Preprocessing)        16
+Gambar 4.3 Flowchart Proses Training        18
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DAFTAR LAMPIRAN
+
+
+Lampiran 1: Karakteristik Dataset ACNE04 & Standar Medis Hayashi        26
+Lampiran 2: Informasi Spesifik Dataset ACNE04-v2        27
+
+
+
+
+
+
+
+
+BAB I
+PENDAHULUAN
+
+
+1.1 Latar Belakang Masalah
+Acne vulgaris merupakan penyakit kulit inflamasi kronis yang paling umum di dunia, dengan prevalensi mencapai 80% pada populasi remaja dan berlanjut hingga usia dewasa pada sebagian besar pasien. Di Indonesia, kondisi ini menjadi salah satu keluhan dermatologis terbanyak yang ditangani di fasilitas layanan kesehatan primer maupun spesialis. Selain dampak fisiologis, jerawat yang tidak tertangani secara tepat dapat meninggalkan bekas permanen dan berkontribusi signifikan pada gangguan psikososial seperti penurunan kepercayaan diri, kecemasan klinis, dan depresi.
+Penentuan derajat keparahan jerawat secara akurat adalah prasyarat mutlak untuk merancang intervensi terapeutik yang tepat sasaran. Standar klinis yang banyak digunakan secara internasional adalah kriteria Hayashi (2008), yang masih menjadi acuan standar dalam berbagai penelitian deep learning untuk grading otomatis keparahan jerawat berbasis lesion counting [1]. Kriteria ini mengklasifikasikan keparahan jerawat ke dalam empat tingkatan: mild (ringan), moderate (sedang), severe (berat), dan very severe (sangat berat) berdasarkan jumlah total lesi yang teridentifikasi pada area wajah.
+Namun, penilaian manual yang dilakukan dokter kulit masih menghadapi tantangan fundamental. Alzahrani dkk. [2] menjelaskan bahwa lesi jerawat memiliki morfologi yang beragam, seperti komedo, papul, pustul, nodul, dan kista, dengan batas visual yang sering kali tidak tegas antar tipe lesi, sehingga proses identifikasi dan penghitungan lesi menjadi sulit dilakukan secara konsisten. Selain itu, Gazeau dkk. [3] menunjukkan bahwa variasi jumlah, ukuran, dan distribusi spasial lesi pada setiap pasien dapat menyebabkan perbedaan hasil penilaian antar klinisi, khususnya ketika proses grading masih bergantung pada interpretasi manual pemeriksa. Kondisi tersebut membuat metode penilaian manual cenderung memerlukan waktu yang besar, bergantung pada pengalaman klinisi, dan kurang efisien untuk diterapkan pada layanan kesehatan dengan volume pasien yang tinggi [2], [4].
+Perkembangan Deep Learning, khususnya arsitektur Convolutional Neural Network (CNN) dan teknik segmentasi semantik, telah membuka peluang baru untuk otomasi analisis citra jerawat. Dua pendekatan utama yang telah dieksplorasi dalam literatur adalah counting-by-detection (berbasis pendeteksian lokasi lesi) dan counting-by-regression (berbasis estimasi kepadatan lesi). Pendekatan deteksi cenderung lebih akurat pada distribusi lesi yang jarang (sparse) namun tidak stabil pada lesi berukuran sangat kecil. Sebaliknya, pendekatan regresi lebih robust pada distribusi padat (dense) namun berisiko overestimation pada area jarang.
+Penelitian terbaru oleh Prokhorov dan Kalinin (2024) menyempurnakan kelemahan sistem Label Distribution Learning (LDL) dengan memperkenalkan metode Label Distribution Smoothing (LDS) pada dataset ACNE04, yang terbukti lebih stabil dalam menangani ketidakpastian label pada batas antar kelas keparahan. Sementara itu, Alzahrani dkk. (2022) mengusulkan penggunaan Dilated UNet dengan mekanisme atensi untuk meningkatkan akurasi hingga 91,5%, tetapi model tersebut memiliki kompleksitas tinggi karena memerlukan input bounding box secara paralel. Gazeau dkk. (2024) kemudian memperkenalkan sistem AcneAI menggunakan dataset ACNE04-v2 dengan anotasi sirkular yang lebih akurat untuk mendukung segmentasi lesi yang lebih detail
+Meskipun metode LDS milik Prokhorov dan Kalinin (2024) berhasil meningkatkan stabilitas prediksi secara matematis, pendekatan tersebut belum mengintegrasikan informasi morfologi lesi secara eksplisit dari tugas segmentasi lokal untuk memperkuat klasifikasi global. Di sisi lain, sistem seperti AcneAI milik Gazeau dkk. (2024) masih menjalankan proses segmentasi dan penilaian secara sekuensial atau terpisah, yang meningkatkan beban komputasi dan risiko hilangnya korelasi fitur antar tugas. Berdasarkan analisis kesenjangan penelitian tersebut, penelitian ini mengusulkan sebuah Kerangka Kerja Hibrida yang secara simultan mengintegrasikan segmentasi lesi presisi dan klasifikasi keparahan dalam satu alur pemrosesan yang terpadu ("unified pipeline") melalui mekanisme Deep Representation Learning. Dengan memanfaatkan dataset ACNE04-v2 secara penuh, baik untuk pelatihan cabang segmentasi maupun evaluasi klasifikasi keparahan - disertai pendekatan pembuatan ground truth mask berbasis Lab relative redness dan HSV threshold yang lebih natural dibandingkan dengan geometris murni , penelitian ini bertujuan untuk menghasilkan solusi yang tidak hanya stabil secara label, tetapi juga didukung oleh bukti morfologi lesi yang presisi.
+1.2 Rumusan Masalah
+Berdasarkan latar belakang yang telah diuraikan, rumusan masalah dalam penelitian ini adalah:
+1. Bagaimana merancang dan membangun kerangka kerja hibrida yang mengintegrasikan segmentasi lesi presisi berbasis Dilated UNet dengan mekanisme atensi spasial dan klasifikasi keparahan jerawat secara simultan dalam satu unified deep learning pipeline?
+2. Bagaimana memanfaatkan representasi fitur dari tugas segmentasi (lokal) untuk meningkatkan performa tugas klasifikasi global (Deep Representation Learning) sehingga menghasilkan sistem yang lebih akurat dibandingkan pendekatan single-task?
+3. Bagaimana mengevaluasi performa kerangka kerja yang diusulkan pada dataset ACNE04-v2 menggunakan metrik evaluasi standar dari domain computer vision dan pencitraan medis, serta membuktikan kontribusi setiap komponen arsitektur melalui ablation study?
+
+
+1.3 Tujuan Penelitian
+Tujuan dari penelitian ini adalah sebagai berikut:
+1. Mengembangkan kerangka kerja hibrida Deep Learning yang mampu melakukan segmentasi lesi jerawat secara presisi (mengenali tipe dan lokasi lesi) sekaligus mengklasifikasikan tingkat keparahan berdasarkan kriteria Hayashi secara otomatis.
+2. Mengeksplorasi dan mengoptimalkan mekanisme Deep Representation Learning yang memanfaatkan fitur representasi dari cabang segmentasi untuk memperkuat cabang klasifikasi global dalam arsitektur multi-task learning.
+3. Mengevaluasi performa model yang dikembangkan pada dataset ACNE04-v2 menggunakan metrik Akurasi, Cohen's Kappa, Dice Coefficient, dan Intersection over Union (IoU) serta membuktikan kontribusi komponen AMFM dan MA-LDS melalui ablation study.
+
+
+1.4 Batasan Penelitian
+Batasan dalam penelitian ini didefinisikan sebagai berikut:
+1. Penelitian berfokus pada jerawat aktif (acne vulgaris), tidak mencakup bekas jerawat (post-acne scarring) atau kondisi dermatologis lainnya.
+2. Dataset Dataset yang digunakan adalah ACNE04-v2 [3], yaitu versi penyempurnaan dari ACNE04 yang dirilis oleh Gazeau dkk. (2024), dengan 1.204 citra wajah valid yang dianotasi menggunakan format sirkular (cx, cy, radius) sebanyak 32.443 anotasi. Distribusi tingkat keparahan: mild/levle0 (470 citra), moderate/levle1 (579 citra), severe/levle2 (133 citra), very severe/levle3 (22 citra). Tidak dilakukan pengumpulan data primer dari pasien.
+3. Skala keparahan yang digunakan adalah kriteria Hayashi (mild/moderate/severe/very severe) sebagaimana yang diimplementasikan dalam dataset ACNE04.
+4. Evaluasi dilakukan menggunakan pembagian data stratified 70% data latih, 15% data validasi, dan 15% data uji, untuk memastikan robustness model terhadap ketidakseimbangan distribusi kelas severity.
+
+
+1.5 Manfaat Penelitian
+Manfaat yang diharapkan dari penelitian ini adalah:
+1. Manfaat Teoritis: Penelitian ini memberikan kontribusi teoritis berupa eksplorasi arsitektur multi-task learning yang menggabungkan segmentasi semantik presisi dan klasifikasi keparahan pada domain citra dermatologis; analisis komparatif mekanisme representasi fitur hibrida terhadap pendekatan single-task; dan referensi metodologis berbasis dataset publik terstandar (ACNE04).
+2. Manfaat Praktis: Sistem yang dikembangkan berpotensi menjadi alat bantu keputusan klinis (Clinical Decision Support System) yang membantu dokter kulit dalam menilai keparahan jerawat secara lebih objektif, konsisten, dan efisien untuk diintegrasikan ke dalam platform teledermatologi.
+
+
+1.6 Novelty (Kebaharuan)
+Kebaharuan atau novelty yang ditawarkan dalam penelitian ini meliputi:
+1. Integrasi Arsitektur Hibrida: Desain unified hybrid framework yang mengintegrasikan Dilated UNet dengan Atensi Spasial dan Deep Representation Learning dalam satu pipeline, di mana fitur lokal dari cabang segmentasi secara eksplisit memperkaya cabang klasifikasi global melalui Adaptive Morphology-Aware Fusion Module (AMFM). Berbeda dari mekanisme Channel Attention biasa, modul ini dirancang khusus untuk secara adaptif menyaring fitur berdasarkan tiga dimensi morfologi utama: ukuran lesi, tingkat inflamasi, dan pola distribusi. Berbeda dari SE-Net yang melakukan self-attention, AMFM menggunakan cross-modal attention dimana bobot adaptif alpha; dihitung dari morphology vector cabang segmentasi untuk membobot fitur global cabang klasifikasi secara elemen-per-elemen.
+2. Refined Mask Generation via Adaptive Color Segmentation: Pendekatan pembuatan ground truth mask segmentasi yang melampaui anotasi circle geometris murni, menggunakan interseksi antara anotasi sirkular ACNE04-v2 dan deteksi piksel lesi berbasis Lab relative redness serta HSV threshold per-gambar. Pendekatan ini menghasilkan mask lesi yang lebih natural dan robust terhadap variasi warna kulit (termasuk kulit gelap dan lesi pustule bernanah), yang menjadi target ground truth untuk melatih cabang segmentasi Dilated UNet secara lebih presisi dibandingkan masking geometris.
+________________
+
+
+BAB II
+TINJAUAN PUSTAKA
+2.1 State of the Art
+Berdasarkan penelusuran pustaka, terdapat berbagai metode state-of-the-art yang telah diusulkan untuk otomasi sistem penilaian keparahan jerawat. Tabel 2.1 merangkum perbandingan beberapa penelitian kunci yang relevan.
+
+
+Tabel 2.1 Perbandingan Penelitian State of the Art Penilaian Keparahan Jerawat Otomatis
+Penelitian (Tahun)
+	Akurasi
+	MAE
+	Metode Utama
+	Dataset
+	Keunggulan Utama
+	Kekurangan
+	Prokhorov & Kalinin (2024)
+	84,11%
+	N/A
+	Scale-adaptive LDS + LDL
+	ACNE04
+	Mengatur smoothing berdasarkan kedekatan lesion count terhadap batas severity
+
+
+	Bergantung pada lesion count dan belum memakai morfologi lesi eksplisit
+	Fiaz et al. (2025) 
+	~85%; Dice >0,85
+	N/A
+	Dual-task segmentation-classification + Grad-CAM
+	HAM10000 (10.015 citra dermoskopik)
+	Menunjukkan feasibility unified segmentation-classification dermatology pipeline
+	Domain lesi kulit umum, bukan acne severity
+	Tabel 2.1 (Lanjutan)
+Penelitian (Tahun)
+	Akurasi
+	MAE
+	Metode Utama
+	Dataset
+	Keunggulan Utama
+	Kekurangan
+	Gazeau dkk. (2024)
+	ICC 0,81; AUC 0,88*
+	N/A
+	Instance Segmentation (U-Net) + Regresi Xception
+	ACNE04-v2
+	Severity score granular 0–100 dan anotasi lesion-level
+
+
+	Pipeline dua tahap, inferensi lebih lambat dan sensitif kualitas input
+	Suriani dkk. (2024)
+	92%
+	N/A
+	MobileNetV2 + TensorFlow Lite
+	1.139 gambar (DermNet)
+	Dioptimasi untuk Android dengan kecepatan inferensi tinggi (< 20ms).
+	Fokus mild lesion pada kamera smartphone masih sulit.
+	Alzahrani dkk. (2022)
+	91,5%
+	1,76
+	Faster R-CNN guided attention + Dilated U-Net regressor
+	ACNE04
+	Attention prior membantu localisation dan density regression
+	Bergantung pada bounding-box prior dan bukan unified multi-task feature-sharing model
+	
+
+
+
+
+
+
+
+
+
+2.2 Tinjauan Pustaka
+Meskipun Wu dkk,(2019 sebagaimana dirujuk dalam Link dkk.[5],2022) memelopori penggunaan Label Distribution Learning (LDL) untuk analisis jerawat, penelitian ini menjadikan karya Prokhorov dan Kalinin (2024) sebagai acuan metodologis utama. Hal ini dikarenakan Prokhorov dan Kalinin berhasil menyempurnakan kelemahan LDL melalui teknik Label Distribution Smoothing (LDS) yang secara signifikan meningkatkan stabilitas klasifikasi pada batas antar-kelas keparahan, meskipun evaluasinya dilakukan pada dataset ACNE04 original.
+Namun, LDS milik Prokhorov masih murni berbasis jumlah lesi dan mengabaikan informasi morfologi lesi (seperti ukuran dan jenis inflamasi), yang merupakan faktor kunci dalam penentuan keparahan klinis. Penelitian ini mengatasi kelemahan tersebut dengan mengusulkan Morphology-Aware Label Distribution Smoothing (MA-LDS).
+Sebagai fondasi arsitektur backbone, penelitian ini memanfaatkan ResNet yang diperkenalkan oleh He dkk. (2016), yang hingga kini tetap menjadi salah satu arsitektur backbone paling banyak dievaluasi dalam studi komparatif computer vision [8]. Arsitektur ini mengadopsi residual connections (koneksi lompatan) yang secara efektif mengatasi masalah vanishing gradient pada jaringan yang sangat dalam, sehingga memungkinkan pelatihan model hingga ratusan lapisan secara stabil. Kemampuan ekstrasi fitur hierarkis yang kuat menjadikan ResNet-50 sebagai backbone standar untuk transfer learning pada berbagai tugas computer vision, termasuk segmentasi dan klasifikasi citra medis yang menjadi inti dari penelitian ini.
+Di sisi lain, Alzahrani dkk. [2] mengusulkan Attention Mechanism Guided Deep Regression Model yang menggabungkan Dilated UNet dengan mekanisme atensi spasial yang dipandu oleh Faster R-CNN. Pendekatan ini memberikan instruksi pada model sehingga meningkatkan akurasi menjadi 91,5% dengan MAE 1,76. Perbedaan fundamental dengan penelitian ini adalah, pada Alzahrani (2022), fitur yang diekstrak untuk tugas segmentasi dan klasifikasi tidak saling berbagi informasi (no sharing feature), yang menyebabkan redundansi komputasi dan hilangnya sinergi fitur. Sebaliknya, penelitian ini memastikan informasi morfologi eksplisit dibagikan dan diprioritaskan antara kedua cabang melalui Adaptive Morphology-Aware Fusion Module (AMFM).
+Dalam konteks yang lebih luas, Fiaz et al. (2025) [12] memberikan bukti teknis bahwa pendekatan hybrid dual-task yang menyatukan segmentasi semantik dan klasifikasi dalam satu pipeline mampu mencapai performa tinggi di domain dermatologi, dengan akurasi klasifikasi ~85% dan Dice segmentasi >0.85 pada dataset dermoskopik HAM10000. Namun, penelitian tersebut berfokus pada lesi kulit umum (termasuk melanoma) menggunakan citra dermoskopik yang terkontrol, sehingga belum menangani kompleksitas spesifik jerawat seperti variasi morfologi lesi (komedo, papul, pustule), ketidakseimbangan kelas severity, dan variasi warna kulit pada foto wajah klinis. Penelitian ini mengisi celah tersebut dengan menerapkan paradigma hybrid dual-task secara khusus pada domain jerawat menggunakan dataset ACNE04-v2.
+Baru-baru ini, Gazeau dkk. [3] mengembangkan AcneAI pada dataset ACNE04-v2 menggunakan instance segmentation berbasis U-Net yang dikombinasikan dengan regresi Xception untuk menghasilkan skor keparahan granular 0-100. Meskipun sistem ini mencapai AUC 0.88 dan ICC 0.81, pipeline-nya masih berjalan secara sekuensial dan terpisah antara tahap segmentasi dan klasifikasi, sehingga meningkatkan beban komputasi dan berpotensi kehilangan korelasi fitur lintas-tugas. Penelitian ini menggunakan dataset ACNE04-v2 yang sama sebagai basis pelatihan, namun menggantikan pipeline sekuensial tersebut dengan unified hybrid framework di mana cabang segmentasi dan klasifikasi dilatih secara simultan dan saling berbagi representasi fitur melalui Adaptive Morphology-Aware Fusion Module (AMFM).
+________________
+
+
+BAB III
+LANDASAN TEORI
+
+
+3.1 Acne Vulgaris dan Sistem Penilaian Keparahan
+Acne vulgaris adalah penyakit inflamasi kronik pada unit pilosebasea kulit. Secara patofisiologi, jerawat terbentuk melalui hiperkeratinisasi folikular, produksi sebum berlebihan, kolonisasi Cutibacterium acnes, dan respons inflamasi. Standar penilaian keparahan jerawat yang umum digunakan adalah kriteria Hayashi (2008), yang menggabungkan penghitungan lesi dengan penilaian global dan tetap digunakan sebagai standar acuan pada berbagai penelitian deep learning untuk grading jerawat berbasis lesion counting, termasuk pada dataset ACNE04 [1]. Standar ini mengklasifikasikan keparahan jerawat menjadi empat kelas: mild (1–5 lesi), moderate (6–20 lesi), severe (21–50 lesi), dan very severe (>50 lesi).
+3.2 Deep Learning untuk Analisis Citra Medis
+Convolutional Neural Network (CNN) merupakan jenis arsitektur Deep Learning yang berfokus pada pemrosesan data berbentuk grid seperti citra [6]. Kemampuan ini menjadikan CNN efektif untuk tugas analisis medis. Dalam otomasi analisis jerawat, paradigma pemrosesan dilakukan dengan counting-by-detection menggunakan detektor objek untuk menghitung jumlahnya maupun melalui counting-by-regression yang mengestimasi peta kepadatan piksel,sebagaimana ditunjukkan oleh Wu dkk.(2019,dalam Lin dkk.[5],2022).
+3.3 Arsitektur Jaringan yang Digunakan
+3.3.1 Dilated UNet
+UNet (Ronneberger dkk., 2015, sebagaimana ditinjau kembali relevansinya dalam Jiangtao dkk. [7], 2025) merupakan arsitektur encoder-decoder untuk segmentasi citra biomedis dengan memanfaatkan skip connections. Dilated UNet adalah bentuk perluasan yang menggunakan konvolusi dilated dengan jarak tertentu (celah/hole) guna memperluas receptive field model secara eksponensial tanpa meningkatkan jumlah parameter komputasi.
+3.3.2 Mekanisme Atensi Spasial
+Mekanisme Atensi Spasial memungkinkan model secara adaptif memprioritaskan region yang informatif. Berbeda dengan konvolusi standar, atensi spasial menghasilkan peta bobot yang membimbing fokus komputasional menuju wilayah aktif, yang mana penting dalam mendeteksi lesi berukuran sangat kecil pada wajah.
+3.3.3 ResNet
+Arsitektur ResNet (Residual Networks), pertama kali diperkenalkan oleh He dkk. (2016) dan tetap relevan sebagaimana dikonfirmasi oleh studi komparatif backbone terkini [8], mengadopsi skip connections untuk mengatasi masalah vanishing gradient. Model ResNet-50 sering dipakai sebagai backbone untuk transfer learning jaringan ekstrasi fitur citra pada proses awal klasifikasi dan segmentasi jaringan.
+3.3.4 Global Average Pooling
+Dalam arsitektur deep learning modern seperti ResNet, Global Average Pooling (GAP) digunakan sebagai pengganti lapisan fully-connected di akhir jaringan untuk transisi menuju klasifikasi, sebagaimana ditinjau secara komprehensif dalam studi survei dan empiris terkini mengenai strategi pooling pada analisis citra medis [16].
+Selain itu, GAP menjaga korespondensi spasial antara peta fitur (feature maps) yang dihasilkan encoder dengan kategori klasifikasi, karena operasi rata-rata dilakukan per-channel dan bukan pada keseluruhan fitur secara sekaligus. Dengan mengintegrasikan GAP, cabang klasifikasi pada penelitian ini menjadi lebih ringan secara komputasi serta lebih tangguh (robust) terhadap pergeseran spasial (translation invariance) pada citra wajah masukan, yang bervariasi dari sisi pengambilan sudut foto pada dataset ACNE04-v2
+3.4 Label Distribution Learning (LDL)
+Label Distribution Learning (LDL) diciptakan untuk menyelesaikan persoalan label yang bersifat ambigu dengan mendistribusikan deret keterkaitan instansi kepada beberapa label tetangga melalui pemodelan manifold distribusi label [9]. Dalam masalah jerawat, Wu dkk. (2019, sebagaimana dirujuk dalam Lin dkk. [5], 2022) menunjukkan bahwa distribusi LDL secara efisien memetakan jumlah titik lesi kepada kelas keparahan yang berkesinambungan tanpa kehilangan kedekatan visual dari jumlah titik batas..
+3.4.1 Adaptive Morphology-Aware Fusion Module (AMFM)
+Adaptive Morphology-Aware Fusion Module (AMFM) adalah mekanisme fusi fitur yang dirancang untuk secara adaptif memprioritaskan dan menggabungkan representasi fitur lokal yang berasal dari cabang segmentasi lesi dengan fitur global dari cabang klasifikasi. Modul ini bekerja berdasarkan prinsip atensi lintas-modalitas, menyaring fitur berdasarkan tiga dimensi morfologi lesi yang kritis bagi penilaian klinis: (1) Ukuran Lesi (radius dari anotasi sirkular), (2) Tingkat Inflamasi (intensitas piksel lesi), dan (3) Pola Distribusi Spasial (posisi relatif lesi di wajah). Melalui penyaringan adaptif ini, AMFM memastikan bahwa cabang klasifikasi keparahan menerima representasi fitur yang kaya, fokus, dan relevan secara morfologis, bukan sekadar agregasi fitur biasa.
+
+
+3.4.2 Morphology-Aware Label Distribution Smoothing (MA-LDS)
+Morphology-Aware Label Distribution Smoothing (MA-LDS) memodifikasi LDS dengan menghitung parameter smoothing () secara dinamis berdasarkan tiga fitur morfologi dari ground truth mask setiap citra.:
+
+
+* Area lesi (area) proporsi: piksel lesi terhadap total area gambar
+* Densitas lesi (density): proporsi piksel dengan probabilitas mask > 0.5
+* Sebaran spasial (spread): rata-rata jarak tertimbang piksel lesi dari pusat massa lesi. 
+
+
+Formula smoothing parameter MA-LDS:
+
+
+
+	(3.1)
+	
+	(3.2)
+	
+
+di mana  adalah nilai dasar smoothing, sedangkan dan  adalah batas bawah dan batas atas nilai smoothing..
+
+
+Distribusi label target kemudian dibentuk sebagai:
+
+
+   (kelas ground truth)
+
+
+	(3.3)
+	   (kelas tetangga ±1 level)
+
+
+	(3.4)
+	
+
+Model dilatih untuk meminimalkan KL Divergence antara distribusi prediksi dan distribusi target MA-LDS ini, dengan pembobotan per-sampel berdasarkan class weight untuk mengatasi ketidakseimbangan kelas. Pendekatan ini memastikan ketidakpastian label pada batas kelas (misalnya transisi mild→moderate) diselesaikan bukan hanya berdasarkan jumlah lesi, tetapi juga berdasarkan bukti morfologi yang diekstrak dari cabang segmentasi. 
+
+
+3.5 Koefisien Kesepakatan Cohen’s Kappa
+Cohen's Kappa merupakan bentuk pengukuran statistik kesesuaian antara dua penilai atau lebih dalam data kategorikal dengan memperhitungkan kemungkinan kesepakatan secara kebetulan, sebagaimana dirumuskan oleh Cohen (1960) dan ditinjau kembali relevansi metodologisnya pada studi terkini [10]. Landis dan Koch (1977), sebagaimana dirujuk dalam studi yang sama [11], merekomendasikan batas 0,61–0,80 sebagai kesepakatan yang bersifat substansial yang ditargetkan dalam komparasi performa model klasifikasi.
+3.6 Dataset Benchmark: ACNE04-v2
+Dataset utama yang digunakan dalam penelitian ini adalah ACNE04-v2 [3], versi penyempurnaan yang dirilis oleh Gazeau dkk. (2024). ACNE04-v2 memuat 1.204 citra wajah valid dengan 32.443 anotasi sirkular (cx, cy, radius) 1,7 kali lebih banyak dibandingkan versi aslinya yang memberikan representasi morfologi lesi lebih presisi untuk melatih cabang segmentasi. Distribusi kelas severity pada dataset ini adalah sebagai berikut:
+
+
+1. levle0 (mild, 1–5 lesi)                : 470 citra  (34,1%)
+2. levle1 (moderate, 6–20 lesi)   : 579 citra  (48,1%)
+3. levle2 (severe, 21–50 lesi)            : 133 citra  (11,0%)
+4. levle3 (very severe, >50 lesi)         : 22 citra  (1,8%)
+
+
+Distribusi ini menunjukkan ketidakseimbangan kelas yang signifikan antara kelas mayoritas (levle0 + levle1 =82,2%) dan kelas minoritas (levle2 + levle3 = 12,8%), yang diatasi melalui strategi weighted sampler dan class-weighted loss pada proses pelatihan.
+3.7 Refined Mask Generation via Adaptive Color Segmentation
+Pemanfaatan anotasi sirkular pada dataset ACNE04-v2 memungkinkan penentuan posisi dan dimensi lesi melalui parameter geometris cx, cy, dan radius. Namun, pembuatan mask yang hanya bersumber dari entitas geometris murni berisiko mengikutsertakan piksel kulit sehat di area sekitar, yang pada gilirannya dapat mendegradasi kualitas sinyal pembelajaran pada cabang segmentasi. Guna memitigasi kendala tersebut, penelitian ini memperkenalkan mekanisme Refined Mask Generation, sebuah metodologi yang mengintegrasikan anotasi sirkular dengan teknik deteksi piksel lesi berbasis segmentasi warna adaptif.
+Strategi ini mengombinasikan dua ruang warna secara sinergis, sebagaimana ditinjau kembali relevansi teoretis dan komputasionalnya oleh Muratbekova dkk. [13]: CIE L*a*b* guna mengidentifikasi intensitas kemerahan relatif, serta HSV untuk melokalisasi spektrum warna lesi secara absolut. Integrasi kedua ruang warna tersebut selaras dengan metodologi yang telah terbukti efikasinya dalam deteksi jerawat, di mana kanal a* pada CIE L*a*b* dioptimasi untuk ekstraksi lesi inflamasi (papules dan pustules), sementara fungsionalitas HSV diarahkan untuk menangkap karakteristik lesi non-inflamasi (whitehead dan blackhead) [15].
+3.7.1 CIE L*a*b*: Deteksi Kemerahan Relatif
+Ruang warna CIE L*a*b* memfasilitasi pemisahan antara komponen luminansi (L*) dan informasi kromatisitas, yang direpresentasikan oleh kanal a* (spektrum merah-hijau) serta b* (spektrum kuning-biru), sesuai kajian komparatif ruang warna terkini [13]. Pemanfaatan kanal a* secara spesifik ditujukan untuk mendeteksi intensitas kemerahan yang menjadi karakteristik utama lesi inflamasi. Guna menjamin sifat adaptif terhadap fluktuasi pencahayaan dan diversitas rona kulit, penetapan ambang batas dilakukan secara relatif pada tiap citra dengan mengacu pada distribusi statistik nilai kanal a* dalam region of interest (ROI) area kulit:
+
+
+
+	(3.5)
+	Dalam formulasi tersebut, μ_a merepresentasikan nilai rata-rata dan σ_a menunjukkan standar deviasi kanal a* pada ROI kulit, sementara variabel k berfungsi sebagai parameter kontrol tingkat sensitivitas. Pendekatan berbasis statistik lokal ini yang mengimplementasikan prinsip adaptive thresholding, sebagaimana dibuktikan efektivitasnya pada segmentasi lesi kulit [14], terbukti lebih robust dibandingkan penggunaan ambang batas statis, karena mampu menyesuaikan diri terhadap profil warna unik dari setiap individu, baik pada spektrum kulit cerah maupun gelap.
+3.7.2 HSV: Deteksi Rentang Warna Absolut
+Ruang warna HSV memfasilitasi segmentasi informasi kromatik ke dalam tiga komponen fundamental: Hue (rona), Saturation (kejenuhan), serta Value (luminansi), yang tetap menjadi salah satu model warna paling selaras dengan persepsi manusia menurut studi eksperimental terkini [13]. Dekomposisi ini memungkinkan identifikasi spektrum warna lesi secara lebih intuitif dan bersifat independen terhadap fluktuasi intensitas cahaya pada kanal Value [15]. Adapun kategorisasi lesi yang diidentifikasi melalui pendekatan ini mencakup:
+1. Merah cerah absolut: merepresentasikan papul inflamasi aktif, yang dilokalisasi pada interval Hue 0°–20° dan 145°–180°.
+2. Putih atau kuning pucat: merepresentasikan struktur eksudatif kepala pustule, yang didefinisikan oleh karakteristik Saturation rendah dan Value yang tinggi.
+
+
+3.7.3 Pembentukan Refined Mask
+Mask akhir diperoleh dengan menggabungkan hasil deteksi dari kedua ruang warna, kemudian membatasinya pada area anotasi sirkular. Formulasi yang digunakan adalah:
+
+
+
+	(3.6)
+	M_Lab adalah mask hasil deteksi kemerahan relatif pada CIE L*a*b*, M_HSV adalah mask hasil deteksi warna absolut pada HSV, dan M_circle adalah mask lingkaran dari anotasi ACNE04-v2. Operasi OR (∨) menggabungkan kandidat piksel lesi dari kedua metode, sedangkan operasi AND (∧) memastikan bahwa hanya piksel kandidat yang berada di dalam area anotasi yang dipertahankan.
+Sebagai mekanisme pengaman, apabila luas area lesi hasil deteksi kurang dari 2% dari luas lingkaran anotasi, sistem menggunakan fallback berupa mask lingkaran geometris murni. Mekanisme ini mencegah terbentuknya mask kosong atau sangat kecil pada citra dengan kontras warna lesi yang rendah.
+
+
+
+
+3.7.4 Ekstraksi Fitur Morfologi untuk MA-LDS
+Dari refined mask yang dihasilkan, lima fitur morfologi diekstrak untuk mendukung modul MA-LDS. Fitur-fitur tersebut merepresentasikan proporsi area lesi, kepadatan, lokasi spasial, dan tingkat penyebaran lesi pada wajah.
+Tabel 3.1 Fitur Morfologi untuk MA-LDS
+Fitur
+	Definisi operasional
+	area
+	Rata-rata probabilitas mask; merepresentasikan proporsi area lesi dalam ROI.
+	density
+	Proporsi piksel mask dengan probabilitas lebih besar dari 0,5.
+	cx
+	Koordinat horizontal pusat massa lesi (weighted centroid).
+	cy
+	Koordinat vertikal pusat massa lesi (weighted centroid).
+	spread
+	Rata-rata penyimpangan tertimbang piksel lesi terhadap pusat massa.
+	Kelima parameter tersebut diintegrasikan secara strategis, di mana trio metrik utama (area, density, dan spread) berperan sebagai representasi kuantitatif dalam formulasi MA-LDS untuk memetakan tingkat keparahan morfologi. Secara komplementer, variabel cx dan cy dioptimasi sebagai konteks spasial bagi modul AMFM guna membobotkan pola distribusi lesi pada area wajah..
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Tabel 3.2 Perbandingan Detail ACNE04 vs ACNE04-v2
+Aspek
+	ACNE04 (Original/Baseline)
+
+
+	ACNE04-v2 (Gazeau dkk., 2024)
+ 
+	Jumlah Gambar
+	1.457
+	1.204 (sudah difilter)
+	Jumlah Anotasi
+	18.983
+	32.443 (1,7x lebih banyak)
+	Aspek
+	ACNE04 (Original/Baseline)
+
+
+	ACNE04-v2 (Gazeau dkk., 2024)
+ 
+	Format Anotasi
+	Bounding Box (x,y,w,h)
+	Lingkaran (cx, cy, radius)
+	Fungsi dalam Penelitian
+	Evaluasi grading akhir
+	Pelatihan cabang segmentasi
+	
+
+3.8 Penanganan Ketidakseimbangan Kelas
+Ketidakseimbangan distribusi kelas severity pada ACNE04-v2 (levle3 memiliki 26,3x lebih sedikit sampel dibanding levle1) berpotensi menyebabkan model bias ke kelas mayoritas. Penelitian ini menerapkan dua strategi komplementer:
+
+
+3.8.1 Weighted Sampler
+
+
+Pada setiap epoch training, sampel dipilih dengan probabilitas yang berbanding terbalik dengan frekuensi kelasnya. Kelas minoritas (levle2, levle3) disampling lebih sering sehingga model melihat distribusi yang lebih seimbang selama pelatihan, tanpa membuang data dari kelas mayoritas.
+
+
+3.8.2 Class-Weighted KL Divergence Loss
+
+
+Pada fungsi loss klasifikasi, KL Divergence per-sampel dikalikan dengan bobot kelas yang dihitung sebagai invers frekuensi:
+
+
+
+
+
+	(3.7)
+	
+
+di mana N_k adalah jumlah sampel kelas k. Kombinasi ini memastikan kesalahan pada kelas minoritas mendapat penalti yang lebih besar selama optimasi, mengikuti strategi pembobotan kelas yang diperkenalkan Wu dkk. (2019, dalam Lin dkk. [5], 2022).
+________________
+
+
+BAB IV
+METODE PENELITIAN
+
+
+4.1 Jenis dan Pendekatan Penelitian
+Penelitian ini menggunakan pendekatan kuantitatif-eksperimental dalam domain Computer Vision dan Medical Image Analysis. Riset ini diklasifikasikan sebagai penelitian terapan (applied research) yang mengadopsi paradigma rekayasa artefak komputasi cerdas (merancang kerangka kerja hibrida untuk segmentasi dan klasifikasi), yang dilanjutkan dengan evaluasi performa model secara empiris terhadap metode-metode state-of-the-art pendahulunya.
+4.2 Bahan atau Materi Penelitian
+Materi utama yang digunakan dalam penelitian ini adalah dataset ACNE04-v2 [3], yang dirilis oleh Gazeau dkk. (2024) sebagai penyempurnaan dari ACNE04 original. Dataset ini digunakan secara penuh baik untuk melatih cabang segmentasi, cabang klasifikasi, maupun evaluasi akhir. ACNE04-v2 memuat 1.204 citra wajah valid dengan 32.443 anotasi sirkular (cx, cy, radius) yang merepresentasikan morfologi lesi secara lebih presisi dibandingkan anotasi bounding box pada versi aslinya.
+Distribusi kelas severity pada dataset ini mengikuti kriteria Hayashi:
+* levle0 (mild, 1–5 lesi) : 470 citra (39,0%)
+* levle1 (moderate, 6–20 lesi) : 579 citra (48,1%)
+* levle2 (severe, 21–50 lesi) : 133 citra (11,0%)
+* levle3 (very severe, >50 lesi) : 22 citra (1,8%)
+
+
+Dataset ini diperoleh dari repositori publik pengembang AcneAI melalui Google Drive dan tidak memerlukan pengumpulan data primer dari pasien.
+
+
+
+
+4.3 Alat Penelitian
+Implementasi kode dan eksperimen akan dibangun menggunakan bahasa pemrograman Python 3.10+. Pengembangan kerangka kerja deep learning diimplementasikan menggunakan pustaka PyTorch, didukung oleh sub-modul torchvision untuk augmentasi dan transformasi citra, serta OpenCV dan scikit-learn untuk preprocessing dan evaluasi. Komputasi dijalankan pada platform Google Colaboratory yang dilengkapi akselerasi GPU NVIDIA Tesla T4 (VRAM ~15GB).
+4.4 Alur Penelitian
+Alur penelitian secara keseluruhan ditunjukkan pada Gambar 4.1. Secara garis besar, penelitian ini berdiri atas empat tahap utama yang berjalan secara berurutan: (1) prapemprosesan dan pembentukan mask segmentasi, (2) pelatihan model hibrida, (3) evaluasi dan validasi , serta ablation study dan perbandingan baseline.
+  
+
+Gambar 4.1 Flowchart Alur Global Penelitian
+
+
+
+
+Pelaksanaan penelitian dirancang secara terstruktur dan operasional melalui sembilan tahapan eksperimen berikut:
+4.4.1 Tahap Prapemrosesan Dataset
+Tahap ini mencakup seluruh proses persiapan data sebelum model dilatih, mulai dari peningkatan kualitas citra , pembentukan ground truth segmentasi, hingga pembagian data. Alur lengkap tahap ini ditunjukkan pada Gambar 4.2.
+  
+
+Gambar 4.2 Flowchart Prapemprosesan Dataset (Preprocessing)
+Citra wajah asli dari dataset ACNE04-v2 akan diproses melalui dua jalur utama, yaitu jalur citra dan jalur mask segmentasi, sebagai berikut:
+4.4.1.1 Prapemrosesan Citra
+Setiap citra terlebih dahulu dibaca dalam format RGB, kemudian dilakukan center crop sesuai rasio yang ditentukan. Setelah itu citra diubah ukurannya menjadi 320x320 piksel agar seragam sebagai masukan model.
+
+
+4.4.1.2 Peningkatan Kualitas Citra
+Jika opsi preprocessing diaktifkan, citra hasil resize diproses melalui tiga tahap:
+* Histogram equalization per channel warna untuk meningkatkan kontras citra
+* Median filtering untuk mengurangi noise lokal pada permukaan kulit
+* Unsharp masking untuk mempertajam detail visual dan batas lesi
+Hasil tahap ini disimpan sebagai preprocessed image yang digunakan sebagai masukan pelatihan model.
+
+
+4.4.1.3 Augmentasi Spasial
+Untuk meningkatkan keragaman data latih dan mengurangi overfitting, dilakukan augmentasi sebagai berikut:
+* Horizontal flip dengan probabilitas 0,5
+* Random rotation pada rentang ±15°
+* Random brightness pada rentang ±15%
+* Random contrast pada rentang ±15%
+
+
+4.4.1.4 Pembentukan Mask Segmentasi
+Pembentukan ground truth mask segmentasi dilakukan melalui pendekatan Refined Mask Generation yang mengombinasikan anotasi sirkular ACNE04-v2 dengan deteksi piksel lesi berbasis analisis warna adaptif. Proses ini terdiri atas dua tahap utama:
+* Deteksi Piksel Lesi (per-gambar): Kandidat piksel lesi dideteksi menggunakan CIE Lab relative redness dan HSV threshold untuk mencakup papul inflamasi serta pustule.
+
+
+* Interseksi dengan Anotasi Sirkular: Mask akhir dibentuk dengan menggabungkan hasil deteksi warna yang berada di dalam area anotasi sirkular.
+
+
+Setelah itu mask diproses menggunakan operasi morfologi closing dan opening untuk menutup celah kecil serta mengurangi noise. Jika area lesi yang terdeteksi kurang dari 2% luas lingkaran anotasi, sistem menggunakan fallback ke M_circle geometris murni.
+Output dari proses ini berupa binary mask beresolusi 320x320 piksel dengan nilai 0 sebagai background dan 1 sebagai area lesi. Refined mask tersebut digunakan sebagai target ground truth untuk melatih cabang segmentasi, sekaligus menjadi dasar ekstraksi fitur morfologi untuk modul MA-LDS.
+
+
+4.4.1.5 Pembagian Data
+Dataset dibagi menggunakan stratified split  berdasarkan kelas keparahan agar proporsi tiap kelas tetap terjaga pada setiap himpunan data. Rasio pembagian yang digunakan adalah:
+
+
+Tabel 4.1 Rasio Pembagian Data
+Himpunan data
+	Rasio
+	Fungsi
+	Training set
+	70%
+	Melatih seluruh parameter model
+	Validation set
+	15%
+	Memantau performa per epoch, early stopping, pemilihan best model
+	Tabel 4.1 (Lanjutan)
+Himpunan data
+	Rasio
+	Fungsi
+	Test set
+	15%
+	Evaluasi akhir tidak disentuh selama training
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+4.4.2 Tahap Pelatihan Model
+Pelatihan model menggunakan skema two-phase fine-tuning dalam satu pipeline, sebagaimana ditunjukkan pada Gambar 4.3.
+  
+
+Gambar 4. 3 Flowchart Proses Training
+4.4.2.1 Arsitektur model
+Arsitektur model terdiri atas komponen-komponen berkut yang bekerja secara terintegrasi:
+* Encoder ResNet-50 sebagai shared backbone mengekstraksi representasi fitur bertingkat dari citra masukan dan mendistribusikan fitur yang sama ke dua cabang.
+* Modul Spatial Attention menekankan area-area paling informatif dari fitur bottleneck encoder.
+* Dilated U-Net decoder (cabang segmentasi) merekonstruksi peta segmentasi lesi dari fitur teratensi.
+* Global average pooling + proyeksi linier (cabang klasifikasi) meringkas fitur teratensi menjadi vektor fitur global wajah.
+* Proyeksi MLP morfologi memproyeksikan vektor morfologi (area, density, cx, cy, spread) ke ruang fitur laten yang kompatibel dengan vektor fitur global.
+* Adaptive Morphology-Aware Fusion Module (AMFM) menggabungkan fitur global dan fitur morfologi secara adaptif.
+* Classification head memprediksi kelas keparahan jerawat (level 0–3).
+
+
+4.4.2.2 Skema Pelatihan Dua Fase
+
+
+* Pada fase pertama, parameter encoder ResNet-50 dibekukan (freeze), sedangkan lapisan-lapisan baru di luar encoder dilatih selama 30 epoch dengan learning rate 1 x 10^-3. Strategi ini bertujuan agar decoder segmentasi, modul atensi, proyeksi fitur, dan classification head dapat mempelajari representasi awal tanpa langsung mengubah bobot encoder utama.
+* Pada fase kedua, seluruh parameter jaringan dibuka kembali (unfreeze), termasuk encoder ResNet-50, kemudian pelatihan dilanjutkan selama 90 epoch dengan learning rate yang lebih kecil, yaitu 1 x 10^-4. Penurunan learning rate pada fase ini ditujukan agar proses optimasi berlangsung lebih halus ketika seluruh komponen jaringan dilatih secara simultan. Optimizer yang digunakan pada kedua fase adalah Stochastic Gradient Descent (SGD) dengan momentum 0,9.
+4.4.2.3 Alur Forward Pass
+Dalam proses forward, citra masukan terlebih dahulu diekstraksi oleh encoder ResNet-50 untuk menghasilkan representasi fitur bertingkat. Fitur bottleneck dari encoder kemudian diproses oleh modul Spatial Attention untuk menekankan area-area yang paling informatif.
+Hasil fitur teratensi tersebut diteruskan ke dua jalur secara simultan:
+* Jalur segmentasi: fitur diteruskan ke decoder segmentasi untuk menghasilkan peta segmentasi lesi dan ekstraksi vektor morfologi.
+* Jalur klasifikasi: fitur dilewatkan melalui global average pooling dan proyeksi linier untuk membentuk vektor fitur global wajah.
+4.4.2.4 Adaptive Morphology-Aware Fusion Module (AMFM)
+        Untuk memperkuat intergrasi antara informasi lokal dari cabang segmentasi dan informasi global dari cabang klasifikasi, penelitian ini menerapkan AMFM. Vektor fitur global dan vektor fitur morfologi hasil proyeksi dikonkatenasikan, kemudian dimasukkan ke dalam jaringan fully connected berlapis yang diakhiri fungsi sigmoid untuk menghasilkan bobot atensi adaptif alpha.
+Representasi akhir dibentuk melalui persamaan:
+
+
+
+
+
+
+
+	(4.1)
+	di mana ⊙ menyatakan perkalian elemen-per-elemen. Formulasi ini memungkinkan model mengatur secara adaptif kontribusi fitur global dan fitur morfologi sesuai karakteristik lesi pada setiap citra. Representasi gabungan v_fused selanjutnya digunakan sebagai masukan bagi classification head untuk memprediksi kelas keparahan jerawat.
+
+
+4.4.2.5 Fungsi Loss Multi Task Loss
+
+
+         Fungsi objektif pelatihan dirumuskan sebagai kombinasi multi-task loss yang mengoptimalkan tiga tujuan secara bersamaan:
+
+
+
+
+
+
+
+	(4.2)
+	dengan nilai bobot default 
+
+
+
+
+
+
+
+	(4.3)
+	
+
+* Segmentation Loss: Kombinasi Binary Cross-Entropy (BCE) dan Dice Loss untuk presisi piksel-level.
+* Classification Loss: Class-weighted KL Divergence berbasis Morphology-Aware Label Distribution Smoothing (MA-LDS).
+
+
+* Morphology Consistency Loss: Mean Squared Error (MSE) untuk menjaga konsistensi antara prediksi dan target morfologi.
+
+
+4.4.2.6 Penanganan Ketidakseimbangan Kelas
+
+
+Dua strategi diterapkan secara bersamaan untuk mengatasi class imbalance:
+
+
+* Weighted sampler: setiap epoch, sampel dipilih dengan probabilitas berbanding terbalik dengan frekuensi kelasnya sehingga kelas minoritas (levle2, levle3) lebih sering muncul.
+* Class-weighted loss: KL Divergence per-sampel dikalikan dengan bobot kelas (invers frekuensi) sehingga kesalahan prediksi pada kelas minoritas mendapat penalti lebih besar.
+
+
+4.4.2.7 Pemilihan Model Terbaik
+
+
+Evaluasi model dilakukan pada validation set di setiap epoch untuk memantau validation loss total (beserta komponennya: segmentation loss, classification loss, dan morphology loss) sebagai indikator kestabilan proses optimasi, serta empat metrik performa yaitu Accuracy, Cohen's Kappa, Dice Coefficient, dan Intersection over Union (IoU). Model terbaik dipilih berdasarkan nilai validation loss terendah, kemudian digunakan untuk evaluasi akhir pada test set.
+
+
+4.4.3 Evaluasi dan Validasi
+4.4.3.1 5-Fold Cross-Validation
+Untuk memastikan keandalan model dan mencegah overfitting terhadap satu konfigurasi pembagian data, diterapkan protokol 5-fold cross-validation pada himpunan training set (70%). Training set dibagi menjadi 5 lipatan (folds), di mana model dilatih pada 4 lipatan dan divalidasi pada 1 lipatan secara bergantian. Test set (15%) tidak digunakan pada tahap ini dan hanya digunakan pada evaluasi akhir.
+4.4.3.2 Evaluasi Final pada Test Set
+Setelah proses pelatihan selesai, model terbaik dievaluasi pada test set (15%) yang tidak pernah digunakan selama pelatihan. Evaluasi mencakup seluruh metrik berikut:
+* Metrik klasifikasi severity: Menggunakan Accuracy dan Cohen's Kappa.
+* Metrik segmentasi mask: Menggunakan Dice Coefficient dan Intersection over Union (IoU).
+
+
+4.4.4 Ablation Study dan Perbandingan Baseline
+4.4.4.1 Ablation Study
+Studi ablasi dilakukan untuk menguji signifikansi dari setiap fitur yang diusulkan. Eksperimen akan mengevaluasi varian model yang dipangkas komponennya secara bertahap:
+
+
+Tabel 4.2 Konfigurasi Varian Model pada Ablation Study
+Varian
+	Konfigurasi
+	M1
+	Model dasar hanya ResNet-50 tanpa komponen tambahan
+	M2
+	M1 + tanpa mekanisme Spatial Attention
+	M3
+	M1 + tanpa Dilated Convolution (konvolusi standar)
+	M4
+	Model lengkap tanpa AMFM (diganti channel attention standar)
+	M5
+	Model lengkap dengan LDS standar (Prokhorov 2024) tanpa MA-LDS
+	M6
+	Model lengkap tanpa fusi Deep Representation Learning (segmentasi dan klasifikasi berjalan terputus)
+	M_proposed
+	Model lengkap yang diusulkan
+	4.4.4.2 Perbandingan Baseline
+Hasil penelitian dikomparasikan secara langsung dengan performa metode Label Distribution Smoothing (LDS) yang diusulkan oleh Prokhorov dan Kalinin (2024) sebagai referensi metodologis utama. Perbandingan ini bertujuan membuktikan bahwa integrasi fitur morfologi dari cabang segmentasi melalui MA-LDS menghasilkan stabilitas prediksi yang lebih baik dibandingkan LDS standar yang hanya berbasis jumlah lesi.
+
+
+
+
+4.5 Variabel Penelitian
+Dalam penelitian ini, variabel penelitian dibedakan menjadi dua jenis utama, yaitu variabel independen dan variabel dependen.
+4.5.1 Variabel Independen (Variabel Bebas)
+Variabel independen merupakan variabel yang dikendalikan atau dimanipulasi oleh peneliti untuk mengetahui pengaruhnya terhadap hasil penelitian. Pada penelitian ini, variabel independen berupa konfigurasi arsitektur jaringan hibrida yang meliputi penggunaan Dilated UNet, mekanisme Spatial Attention, Adaptive Morphology-Aware Fusion Module (AMFM), serta pengaturan hyperparameter pada fungsi multi-task loss (termasuk implementasi MA-LDS).
+
+
+4.5.2 Variabel Dependen (Variabel Terikat)
+
+
+Variabel dependen merupakan variabel yang digunakan untuk mengukur hasil atau performa dari konfigurasi sistem yang diterapkan. Dalam penelitian ini, variabel dependen berupa kinerja model yang diukur melalui metrik segmentasi, metrik penghitungan lesi, dan metrik klasifikasi. Adapun parameter evaluasi yang digunakan meliputi:
+
+
+* Dice Coefficient
+* Intersection over Union (IoU)
+* Accuracy
+* Cohen's Kappa
+
+
+4.6 Analisis Hasil
+Analisis kuantitatif dilakukan dengan menelaah confusion matrix dari hasil inferensi data uji. Matriks tersebut memetakan sebaran True Positive, True Negative, False Positive, dan False Negative untuk setiap kelas derajat keparahan Hayashi. Hasil komparasi dari uji coba ablation study dan perbandingan baseline state-of-the-art akan dianalisis guna membuktikan secara statistik apakah mekanisme integrasi representasi fitur lokal-global yang diusulkan mampu menghasilkan margin akurasi diagnostik yang signifikan dan dapat diandalkan secara klinis.
+________________
+
+
+BAB V
+JADWAL PENELITIAN
+Kegiatan penelitian direncanakan berlangsung selama 6 (enam) bulan. Rincian tahapan tersebut dipaparkan secara kronologis pada Tabel 5.1 berikut ini.
+
+
+Tabel 5.1 Jadwal Kegiatan Proposal Penelitian Tesis
+Nama Kegiatan
+	Bulan Ke-
+	1
+	2
+	3
+	4
+	5
+	6
+ 
+	Studi Literatur & Persiapan Dataset ACNE04-v2
+	✓
+	✓
+	
+
+	
+
+	
+
+	
+
+	Implementasi Arsitektur Hibrida
+	
+
+	✓
+	✓
+	
+
+	
+
+	
+
+	Refined Mask Generation & Preprocessing Pipeline
+	
+
+	✓
+	✓
+	
+
+	
+
+	
+
+	Pelatihan Model (Two-Phase Fine-Tuning)
+	
+
+	
+
+	✓
+	✓
+	
+
+	
+
+	Tabel 5.1 (Lanjutan)
+Nama Kegiatan
+	Bulan Ke-
+	1
+	2
+	3
+	4
+	5
+	6
+ 
+	Evaluasi dan Validasi (5-Fold CV & Test Set)Ablation Study & Perbandingan Baseline
+	
+
+	
+
+	
+
+	✓
+	✓
+	
+
+	Penyusunan Laporan Tesis
+	
+
+	
+
+	
+
+	
+
+	✓
+	✓
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+DAFTAR PUSTAKA
+[1] J. Wang, C. Wang, Z. Wang, A. H. Hounye, Z. Li, M. Kong, M. Hou, J. Zhang, and M. Qi, "A novel automatic acne detection and severity quantification scheme using deep learning," Biomed. Signal Process. Control, vol. 84, art. 104803, 2023.
+[2] S. Alzahrani et al., "Attention mechanism guided deep regression model for acne lesion counting and severity grading," Comput. Biol. Med., vol. 146, p. 105577, 2022.
+[3] L. Gazeau et al., "AcneAI: Automated acne severity grading using instance segmentation and regression scoring on ACNE04-v2," J. Invest. Dermatol., 2024.
+[4] A. Prokhorov and A. Kalinin, "Label distribution smoothing for acne severity grading," Pattern Recognit. Lett., vol. 178, pp. 45–53, 2024.
+[5] Y. Lin, Y. Jiang, Z. Ma, K. Chen, H. Guan, R. You, and X. Chen, "KIEGLFN: A unified acne grading framework on face images," Comput. Methods Programs Biomed., vol. 221, art. 106911, 2022.
+[6] I. D. Mienye, T. G. Swart, G. Obaido, M. Jordan, and P. Ilono, "Deep convolutional neural networks in medical image analysis: A review," Information, vol. 16, no. 3, art. 195, 2025.
+[7] Jiangtao et al., "A comprehensive review of U-Net and its variants: Advances and applications in medical image segmentation," IET Image Process., 2025, doi: 10.1049/ipr2.70019.
+[8] "A comparative study of ResNet-pretrained models for computer vision," in Proc. 15th Int. Conf. Contemporary Computing, ACM, 2023, doi: 10.1145/3607947.3608042.
+[9] X. Geng, C. Yin, and Z.-H. Zhou, "Facial age estimation by learning from label distributions," IEEE Trans. Pattern Anal. Mach. Intell., vol. 35, no. 10, pp. 2401–2412, 2013.
+[10] T. Yu, L. Yang, X. Jiang, S. Shao, W. Sha, and M. Li, "Matters arising: methodological issues on evaluating agreement between medical students' attitudes towards drugs/alcohol use during pregnancy by Cohen's kappa analysis," BMC Med. Educ., vol. 23, art. 89, 2023.
+[11] M. Li and T. Yu, "Methodological issues on evaluating agreement between two detection methods by Cohen's kappa analysis," Parasites Vectors, vol. 15, art. 269, 2022.
+[12] M. Fiaz et al., "Hybrid dual-task framework for simultaneous skin lesion segmentation and classification using U-Net ResNet34 and EfficientNet-B0," Multimedia Tools and Applications, vol. 84, no. 1, pp. 112-134, 2025.
+[13] M. Muratbekova, N. Toganas, A. Igali, M. Shagyrov, E. Kadyrgali, A. Yerkin, and P. Shamoi, "Color models in image processing: A review and experimental comparison," arXiv preprint arXiv:2510.00584, 2025.
+[14] M. Tamoor, A. Naseer, A. Khan, and K. Zafar, "Skin lesion segmentation using an ensemble of different image processing methods," Diagnostics, vol. 13, no. 16, art. 2684, 2023, doi: 10.3390/diagnostics13162684.
+[15] N. Yadav, S. M. Alfayeed, A. Khamparia, B. Pandey, D. N. Thanh, and S. D. Pande, "HSV model‐based segmentation driven facial acne detection using deep learning," Expert Systems, vol. 39, no. 3, p. e12760, 2022, doi: 10.1111/exsy.12760.
+[16] R. Nirthika, S. Manivannan, A. Ramanan, and R. Wang, "Pooling in convolutional neural networks for medical image analysis: A survey and an empirical study," Neural Comput. Appl., vol. 34, no. 7, pp. 5321–5347, 2022.
+
+
+
+
+LAMPIRAN
+Lampiran 1: Karakteristik Dataset ACNE04 & Standar Medis Hayashi
+Tabel A.1 Standar Kriteria Hayashi
+
+
+Kelas
+	Kriteria (Jumlah Lesi)
+	Mild
+	1 – 5
+	Moderate
+	6 – 20
+	Severe
+	21 – 50
+	Very Severe
+	> 50
+	
+
+
+
+Tabel A.2 Distribusi Dataset ACNE04-v2 (dataset aktual penelitian)
+
+
+Kelas
+	Kreteria
+	Total
+	Latih (70%)
+	Validasi (15%)
+	Uji (15%)
+	levle0
+	1-5 lesi
+	470
+	~329
+	~70
+	~71
+	levle1
+	6-20 lesi
+	579
+	~405
+	~87
+	~87
+	levle2
+	21-50 lesi
+	133
+	~93
+	~20
+	~20
+	levle3
+	> 50 lesi
+	22
+	~15
+	~3
+	~4
+	TOTAL
+	
+
+	1.204
+	~842
+	~181
+	~181
+	
+
+Catatan: Pembagian latih/validasi/uji menggunakan stratified sampling 70/15/15. Jumlah per split adalah estimasi angka pasti ditentukan saat eksperimen.
+
+
+Lampiran 2: Informasi Spesifik Dataset ACNE04-v2
+1. Deskripsi Umum
+Dataset ACNE04-v2 merupakan versi penyempurnaan dari dataset ACNE04 asli yang dirilis oleh Gazeau dkk. (2024) melalui repositori publik AIpourlapeau. Dataset ini difilter untuk meningkatkan kualitas data dengan menghapus citra berkualitas rendah dan menambahkan anotasi lesi yang lebih komprehensif oleh pakar dermatologi.
+2. Statistik Dataset
+Perbandingan kuantitas anotasi antara versi asli dan versi v2 menunjukkan peningkatan detail yang signifikan untuk melatih model segmentasi:
+Tabel A.3 Statistik Perbandingan Anotasi Dataset
+Kategori Statistik
+	ACNE04 (Original)
+	ACNE04-v2 (Penyempurnaan)
+	Jumlah Citra
+	1.457
+	1.204 (citra valid yang berhasil divalidasi)
+	Total Anotasi Lesi
+	18.983
+	32.443 (1,7x lebih banyak)
+	Format Anotasi
+	Bounding Box (x, y, w, h)
+	Sirkular (cx, cy, radius)
+	3. Format Anotasi Sirkular
+Berbeda dengan ACNE04 asli yang menggunakan kotak pembatas (bounding box), ACNE04-v2 menggunakan anotasi lingkaran yang lebih presisi untuk menandai morfologi jerawat. Setiap lesi direpresentasikan dalam berkas koordinat JSON dengan parameter:
+* cx, cy: Titik pusat lesi pada koordinat piksel gambar.
+* r: Radius lingkaran yang mencakup seluruh area lesi.
+Format anotasi sirkular yang menyediakan radius (r) secara eksplisit sangat penting karena radius ini menjadi basis bagi Adaptive Morphology-Aware Fusion Module (AMFM) untuk mengekstrak dan memprioritaskan fitur berdasarkan dimensi ukuran lesi secara presisi. Data ini kemudian dikonversi secara otomatis melalui skrip refine_masks_color.py menjadi refined binary mask (peta hitam-putih) berukuran 320x320 piksel menggunakan pendekatan Refined Mask Generation berbasis Lab relative redness dan HSV threshold, untuk melatih cabang segmentasi Dilated UNet dalam penelitian ini.
+
+
+4. Struktur Berkas Data (JSON Snippet)
+Data anotasi disimpan dalam format yang terinspirasi dari standar COCO annotations:
+
+
+ {
+    "images": [
+      {
+        "id": 0,
+        "file_name": "levle3_116.jpg",
+        "height": 3456,
+        "width": 3112
+      }
+    ],
+    "annotations": [
+      {
+        "id": 0,
+        "image_id": 0,
+        "radius": 25,
+        "coordinates": [2229, 168],
+        "class_name": "acne"
+      },
+      {
+        "id": 1,
+        "image_id": 0,
+        "radius": 22,
+        "coordinates": [2323, 273],
+        "class_name": "acne"
+      }
+    ]
+  }
+
+
+5. Sumber Perolehan Data
+Dataset ini diperoleh secara resmi dari repositori terbuka pengembang AcneAI pada tautan berikut: https://github.com/AIpourlapeau/acne04v2.
+________________
+
+
+  
+
+________________
+
+
+  
+
+________________

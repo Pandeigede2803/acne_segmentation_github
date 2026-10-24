@@ -62,10 +62,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet ResNet-50 weights if available.")
     parser.add_argument("--input-normalization", choices=("auto", "none", "imagenet"), default="auto",
                         help="auto applies ImageNet normalization when --pretrained is used")
+    parser.add_argument("--variant", choices=("proposed", "baseline", "no_attention", "no_dilation",
+                                                "no_amfm", "lds", "no_fusion"), default="proposed",
+                        help="Ablation variant; baseline retains the shared decoder for segmentation metrics")
+    parser.add_argument("--label-distribution", choices=("auto", "malds", "lds", "none"), default="auto",
+                        help="Classification target smoothing; auto maps lds variant to fixed LDS")
     parser.add_argument("--weighted-sampler", action="store_true", help="Oversample minority classes in train split.")
     parser.add_argument("--class-weighting", choices=("balanced", "none"), default="balanced",
                         help="Classification loss weights: N_train / (4 * class_count), or all ones.")
     parser.add_argument("--resume", action="store_true", help="Resume from last_checkpoint.pt in output-dir.")
+    parser.add_argument("--skip-test-eval", action="store_true",
+                        help="Skip test evaluation for cross-validation folds.")
     return parser.parse_args()
 
 
@@ -268,12 +275,18 @@ class DecoderBlock(nn.Module):
 
 
 class ProposalHybridResNet50(nn.Module):
-    def __init__(self, num_classes: int = 4, pretrained: bool = False) -> None:
+    def __init__(self, num_classes: int = 4, pretrained: bool = False, variant: str = "proposed") -> None:
         super().__init__()
+        valid_variants = {"proposed", "baseline", "no_attention", "no_dilation", "no_amfm", "lds", "no_fusion"}
+        if variant not in valid_variants:
+            raise ValueError(f"Varian model tidak dikenal: {variant}")
+        self.variant = variant
         self.encoder = ResNetEncoder(pretrained=pretrained)
-        self.attention = SpatialAttention(2048)
-        self.dec4 = DecoderBlock(2048, 1024, 512, dilation=2)
-        self.dec3 = DecoderBlock(512, 512, 256, dilation=2)
+        self.use_attention = variant not in {"baseline", "no_attention"}
+        self.attention = SpatialAttention(2048) if self.use_attention else nn.Identity()
+        dilation = 1 if variant in {"baseline", "no_dilation"} else 2
+        self.dec4 = DecoderBlock(2048, 1024, 512, dilation=dilation)
+        self.dec3 = DecoderBlock(512, 512, 256, dilation=dilation)
         self.dec2 = DecoderBlock(256, 256, 128, dilation=1)
         self.dec1 = DecoderBlock(128, 64, 64, dilation=1)
         self.final_up = nn.ConvTranspose2d(64, 32, kernel_size=2, stride=2)
@@ -287,7 +300,10 @@ class ProposalHybridResNet50(nn.Module):
         self.global_proj = nn.Linear(2048, 128)
         self.morph_proj = nn.Sequential(nn.Linear(5, 64), nn.ReLU(inplace=True), nn.Linear(64, 128))
         self.amfm_alpha = nn.Sequential(nn.Linear(256, 128), nn.ReLU(inplace=True), nn.Linear(128, 128), nn.Sigmoid())
-        self.classifier = nn.Sequential(nn.Linear(128, 64), nn.ReLU(inplace=True), nn.Dropout(0.3), nn.Linear(64, num_classes))
+        classifier_channels = 256 if variant == "no_amfm" else 128
+        self.classifier = nn.Sequential(
+            nn.Linear(classifier_channels, 64), nn.ReLU(inplace=True), nn.Dropout(0.3), nn.Linear(64, num_classes)
+        )
 
     def set_encoder_trainable(self, trainable: bool) -> None:
         for param in self.encoder.parameters():
@@ -309,7 +325,11 @@ class ProposalHybridResNet50(nn.Module):
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
         s1, s2, s3, s4, bottleneck = self.encoder(x)
-        attended, attention_map = self.attention(bottleneck)
+        if self.use_attention:
+            attended, attention_map = self.attention(bottleneck)
+        else:
+            attended = bottleneck
+            attention_map = bottleneck.new_ones((bottleneck.shape[0], 1, *bottleneck.shape[-2:]))
         d4 = self.dec4(attended, s4)
         d3 = self.dec3(d4, s3)
         d2 = self.dec2(d3, s2)
@@ -322,8 +342,13 @@ class ProposalHybridResNet50(nn.Module):
         global_feature = self.global_proj(self.global_pool(attended).flatten(1))
         morph_vector = self.morphology_from_mask(seg_logits)
         morph_feature = self.morph_proj(morph_vector)
-        alpha = self.amfm_alpha(torch.cat([global_feature, morph_feature], dim=1))
-        fused = alpha * global_feature + (1.0 - alpha) * morph_feature
+        if self.variant == "no_amfm":
+            fused = torch.cat([global_feature, morph_feature], dim=1)
+        elif self.variant in {"no_fusion", "baseline"}:
+            fused = global_feature
+        else:
+            alpha = self.amfm_alpha(torch.cat([global_feature, morph_feature], dim=1))
+            fused = alpha * global_feature + (1.0 - alpha) * morph_feature
         class_logits = self.classifier(fused)
         return {"seg_logits": seg_logits, "class_logits": class_logits, "attention_map": attention_map, "morph_vector": morph_vector}
 
@@ -346,13 +371,26 @@ def dice_iou_from_logits(logits: torch.Tensor, targets: torch.Tensor) -> tuple[t
     return dice, iou
 
 
-def make_malds_targets(labels: torch.Tensor, morph_targets: torch.Tensor, base_eps: float, max_eps: float) -> torch.Tensor:
+def make_malds_targets(
+    labels: torch.Tensor,
+    morph_targets: torch.Tensor,
+    base_eps: float,
+    max_eps: float,
+    mode: str = "malds",
+) -> torch.Tensor:
     batch_size = labels.numel()
     targets = torch.zeros((batch_size, 4), device=labels.device)
-    area = morph_targets[:, 0].clamp(0, 1)
-    density = morph_targets[:, 1].clamp(0, 1)
-    spread = morph_targets[:, 4].clamp(0, 1)
-    eps_values = (base_eps + 1.5 * area + 0.5 * density + 0.2 * spread).clamp(base_eps, max_eps)
+    if mode == "malds":
+        area = morph_targets[:, 0].clamp(0, 1)
+        density = morph_targets[:, 1].clamp(0, 1)
+        spread = morph_targets[:, 4].clamp(0, 1)
+        eps_values = (base_eps + 1.5 * area + 0.5 * density + 0.2 * spread).clamp(base_eps, max_eps)
+    elif mode == "lds":
+        eps_values = torch.full((batch_size,), base_eps, dtype=torch.float32, device=labels.device)
+    elif mode == "none":
+        eps_values = torch.zeros((batch_size,), dtype=torch.float32, device=labels.device)
+    else:
+        raise ValueError(f"Mode label distribution tidak dikenal: {mode}")
 
     for i, label in enumerate(labels.tolist()):
         eps = eps_values[i]
@@ -413,7 +451,9 @@ def run_epoch(
 
         outputs = model(images)
         seg_loss = bce(outputs["seg_logits"], masks) + dice_loss_from_logits(outputs["seg_logits"], masks)
-        target_dist = make_malds_targets(labels, morph_targets, args.base_smoothing, args.max_smoothing)
+        target_dist = make_malds_targets(
+            labels, morph_targets, args.base_smoothing, args.max_smoothing, args.resolved_label_distribution
+        )
         per_sample_kl = F.kl_div(F.log_softmax(outputs["class_logits"], dim=1), target_dist, reduction="none").sum(dim=1)
         cls_loss = (per_sample_kl * class_weights[labels]).mean()
         morph_loss = mse(outputs["morph_vector"], morph_targets)
@@ -448,7 +488,7 @@ def build_loaders(args: argparse.Namespace, rows: list[dict[str, str]]) -> tuple
     test_rows = [row for row in rows if row["split"] == "test"]
     train_counts = Counter(int(row["label_index"]) for row in train_rows)
     for split_name, split_rows in [("train", train_rows), ("val", val_rows), ("test", test_rows)]:
-        if not split_rows:
+        if not split_rows and not (split_name == "test" and args.skip_test_eval):
             raise ValueError(f"Split {split_name} kosong. Periksa manifest.")
         if any(int(row["label_index"]) not in range(4) for row in split_rows):
             raise ValueError(f"Label pada split {split_name} harus 0 sampai 3.")
@@ -503,6 +543,12 @@ def main() -> None:
         else "none" if args.input_normalization == "auto"
         else args.input_normalization
     )
+    args.resolved_label_distribution = (
+        "lds" if args.label_distribution == "auto" and args.variant == "lds"
+        else "none" if args.label_distribution == "auto" and args.variant == "baseline"
+        else "malds" if args.label_distribution == "auto"
+        else args.label_distribution
+    )
     device = resolve_device(args.device)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     best_model_path = args.output_dir / "best_model.pt"
@@ -513,7 +559,7 @@ def main() -> None:
     class_weights = class_weights.to(device)
     train_class_counts = Counter(int(row["label_index"]) for row in rows if row["split"] == "train")
 
-    print("🚀 Proposal hybrid training: ResNet50 + Spatial Attention + Decoder + AMFM + MA-LDS")
+    print(f"🚀 Hybrid training variant: {args.variant} | label distribution: {args.resolved_label_distribution}")
     print(f"🧾 Manifest: {args.manifest}")
     print(f"🖥️ Device: {device}")
     print(f"🖼️ Input normalization: {args.resolved_input_normalization}")
@@ -524,7 +570,7 @@ def main() -> None:
     print(f"🧠 Phase 1: freeze encoder, epochs={args.phase1_epochs}, lr={args.phase1_lr}")
     print(f"🧠 Phase 2: full fine-tuning, epochs={args.phase2_epochs}, lr={args.phase2_lr}")
 
-    model = ProposalHybridResNet50(num_classes=4, pretrained=args.pretrained).to(device)
+    model = ProposalHybridResNet50(num_classes=4, pretrained=args.pretrained, variant=args.variant).to(device)
     start_epoch = 1
     best_val_loss = float("inf")
     history: list[dict[str, float | int | str]] = []
@@ -543,6 +589,14 @@ def main() -> None:
     if args.resume and last_checkpoint_path.exists():
         # Full loading is required for legacy Path metadata in this run's own checkpoint.
         checkpoint = torch.load(last_checkpoint_path, map_location=device, weights_only=False)
+        checkpoint_args = checkpoint.get("args", {})
+        saved_variant = checkpoint_args.get("variant", "proposed")
+        saved_distribution = checkpoint_args.get("resolved_label_distribution", "malds")
+        if saved_variant != args.variant or saved_distribution != args.resolved_label_distribution:
+            raise ValueError(
+                "Konfigurasi variant/label-distribution checkpoint berbeda. "
+                "Gunakan output-dir baru untuk eksperimen atau resume hanya dengan konfigurasi yang sama."
+            )
         model.load_state_dict(checkpoint["model_state_dict"])
         start_epoch = int(checkpoint["epoch"]) + 1
         best_val_loss = float(checkpoint["best_val_loss"])
@@ -619,10 +673,14 @@ def main() -> None:
         )
         save_json({"history": history, "best_val_loss": best_val_loss}, args.output_dir / "history_partial.json")
 
-    print("🧪 Evaluasi akhir test set")
-    model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
-    with torch.no_grad():
-        test_metrics = run_epoch(model, test_loader, device, optimizer=None, args=args, class_weights=class_weights)
+    if args.skip_test_eval:
+        test_metrics = None
+        print("⏭️ Evaluasi test dilewati sesuai konfigurasi CV.")
+    else:
+        print("🧪 Evaluasi akhir test set")
+        model.load_state_dict(torch.load(best_model_path, map_location=device, weights_only=True))
+        with torch.no_grad():
+            test_metrics = run_epoch(model, test_loader, device, optimizer=None, args=args, class_weights=class_weights)
 
     summary = {
         "config": {
@@ -631,12 +689,14 @@ def main() -> None:
             "output_dir": str(args.output_dir),
             "device": str(device),
             "encoder": "resnet50",
-            "fusion": "amfm",
-            "classification_loss": "morphology_aware_label_distribution_kl",
+            "fusion": args.variant,
+            "classification_loss": f"{args.resolved_label_distribution}_kl",
             "class_weights": class_weights.detach().cpu().tolist(),
             "train_class_counts": [train_class_counts[idx] for idx in range(4)],
             "segmentation_loss": "bce_plus_dice",
             "input_normalization": args.resolved_input_normalization,
+            "variant": args.variant,
+            "label_distribution": args.resolved_label_distribution,
         },
         "best_val_loss": best_val_loss,
         "test_metrics": test_metrics,
@@ -647,14 +707,17 @@ def main() -> None:
     print(f"🏁 Best model: {best_model_path}")
     print(f"🔁 Last checkpoint: {last_checkpoint_path}")
     print(f"📊 Metrics: {args.output_dir / 'metrics.json'}")
-    print(
-        "🧾 Test | "
-        f"loss={test_metrics['loss']:.4f} "
-        f"acc={test_metrics['acc']:.4f} "
-        f"kappa={test_metrics['kappa']:.4f} "
-        f"dice={test_metrics['dice']:.4f} "
-        f"iou={test_metrics['iou']:.4f}"
-    )
+    if test_metrics is None:
+        print("🧾 Test metrics: skipped")
+    else:
+        print(
+            "🧾 Test | "
+            f"loss={test_metrics['loss']:.4f} "
+            f"acc={test_metrics['acc']:.4f} "
+            f"kappa={test_metrics['kappa']:.4f} "
+            f"dice={test_metrics['dice']:.4f} "
+            f"iou={test_metrics['iou']:.4f}"
+        )
 
 
 if __name__ == "__main__":

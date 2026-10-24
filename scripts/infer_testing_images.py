@@ -61,6 +61,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda", "mps"), default="auto")
     parser.add_argument("--input-normalization", choices=("auto", "none", "imagenet"), default="auto",
                         help="auto membaca metrics.json di samping checkpoint; fallback ke none")
+    parser.add_argument("--variant", choices=("auto", "proposed", "baseline", "no_attention", "no_dilation",
+                                                "no_amfm", "lds", "no_fusion"), default="auto",
+                        help="auto membaca varian model dari metrics.json")
     parser.add_argument(
         "--model-type",
         choices=("baseline", "proposal"),
@@ -143,6 +146,21 @@ def resolve_input_normalization(args: argparse.Namespace) -> str:
     return "none"
 
 
+def resolve_model_variant(args: argparse.Namespace) -> str:
+    if args.variant != "auto":
+        return args.variant
+    metrics_path = args.checkpoint.parent / "metrics.json"
+    if metrics_path.exists():
+        try:
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            variant = metrics.get("config", {}).get("variant", "proposed")
+            if variant in {"proposed", "baseline", "no_attention", "no_dilation", "no_amfm", "lds", "no_fusion"}:
+                return variant
+        except (OSError, json.JSONDecodeError):
+            pass
+    return "proposed"
+
+
 def normalize_image_tensor(tensor: torch.Tensor, mode: str) -> torch.Tensor:
     if mode == "imagenet":
         mean = tensor.new_tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
@@ -220,6 +238,7 @@ def main() -> None:
     args = parse_args()
     device = base.resolve_device(args.device)
     input_normalization = resolve_input_normalization(args)
+    model_variant = resolve_model_variant(args)
     rows = load_rows(args.manifest, args.split)
 
     if not args.checkpoint.exists():
@@ -231,7 +250,7 @@ def main() -> None:
     overlay_dir.mkdir(parents=True, exist_ok=True)
 
     if args.model_type == "proposal":
-        model = ProposalHybridResNet50(num_classes=4, pretrained=False).to(device)
+        model = ProposalHybridResNet50(num_classes=4, pretrained=False, variant=model_variant).to(device)
     else:
         model = base.DilatedUNetAMFM(num_classes=4).to(device)
 
@@ -319,6 +338,7 @@ def main() -> None:
         "threshold": args.threshold,
         "device": str(device),
         "input_normalization": input_normalization,
+        "variant": model_variant,
         "total_images": len(results),
         "classification_accuracy": correct / max(1, len(true_labels)),
         "classification_kappa": cohen_kappa_from_pairs(true_labels, pred_labels) if true_labels else "",
