@@ -610,7 +610,14 @@ def main() -> None:
         if "torch_rng_state" in checkpoint:
             torch.set_rng_state(checkpoint["torch_rng_state"].cpu())
         if torch.cuda.is_available() and checkpoint.get("cuda_rng_state") is not None:
-            torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state"])
+            # cuda_rng_state_cpu_fix: map_location=device can move RNG byte tensors to CUDA,
+            # while set_rng_state_all requires CPU ByteTensor values.
+            cuda_rng_state = checkpoint["cuda_rng_state"]
+            if isinstance(cuda_rng_state, torch.Tensor):
+                cuda_rng_state = [cuda_rng_state]
+            cuda_rng_state = [torch.as_tensor(state, dtype=torch.uint8).cpu().contiguous()
+                              for state in cuda_rng_state]
+            torch.cuda.set_rng_state_all(cuda_rng_state)
         if "python_rng_state" in checkpoint:
             random.setstate(checkpoint["python_rng_state"])
         print(f"🔁 Resume dari epoch {start_epoch}")
