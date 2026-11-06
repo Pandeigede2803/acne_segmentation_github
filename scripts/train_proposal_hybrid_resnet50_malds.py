@@ -350,7 +350,8 @@ class ProposalHybridResNet50(nn.Module):
             alpha = self.amfm_alpha(torch.cat([global_feature, morph_feature], dim=1))
             fused = alpha * global_feature + (1.0 - alpha) * morph_feature
         class_logits = self.classifier(fused)
-        return {"seg_logits": seg_logits, "class_logits": class_logits, "attention_map": attention_map, "morph_vector": morph_vector}
+        return {"seg_logits": seg_logits, "class_logits": class_logits, "attention_map": attention_map,
+                "morph_vector": morph_vector, "class_features": fused}
 
 
 def dice_loss_from_logits(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:

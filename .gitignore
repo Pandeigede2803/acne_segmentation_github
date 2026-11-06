@@ -14,6 +14,15 @@ __pycache__/
 *.pth
 *.ckpt
 
+# Large generated artifacts stored under docs (keep local, do not commit)
+/docs/**/*.pt
+/docs/**/*.pth
+/docs/**/*.ckpt
+/docs/**/*.png
+/docs/**/*.jpg
+/docs/**/*.jpeg
+/docs/**/*.csv
+
 # CSV manifest (di-generate ulang)
 *.csv
 
