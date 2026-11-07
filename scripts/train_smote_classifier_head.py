@@ -2,6 +2,7 @@
 """SMOTE experiment on frozen hybrid classification features (train split only)."""
 import argparse
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -53,6 +54,8 @@ def main():
     p.add_argument('--seed', type=int, default=42)
     p.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     a = p.parse_args()
+    a.output_dir.mkdir(parents=True, exist_ok=True)
+    print(f"SMOTE run started. Output: {a.output_dir}", flush=True)
     sys.path.insert(0, str(a.trainer.resolve().parent))
     import train_proposal_hybrid_resnet50_malds as tr
 
@@ -71,21 +74,31 @@ def main():
     feats, labels = {}, {}
     with torch.no_grad():
         for split, split_rows in splits.items():
+            print(f"Extracting frozen features: {split} ({len(split_rows)} samples)", flush=True)
             ds = tr.PreprocessedAcneDataset(split_rows, cfg['image_size'], False, args)
             loader = DataLoader(ds, batch_size=a.batch_size, shuffle=False, num_workers=0)
             f, y = [], []
-            for batch in loader:
+            for batch_i, batch in enumerate(loader, start=1):
                 out = model(batch['image'].to(a.device))
                 f.append(out['class_features'].cpu())
                 y.append(batch['label'])
+                if batch_i % 10 == 0 or batch_i == len(loader):
+                    print(f"  {split}: batch {batch_i}/{len(loader)}", flush=True)
             feats[split], labels[split] = torch.cat(f), torch.cat(y)
+            print(f"  {split} feature matrix: {tuple(feats[split].shape)}", flush=True)
 
     train_x, train_y, targets = smote_features(feats['train'], labels['train'], a.seed)
+    print(f"Train samples after SMOTE: {len(labels['train'])} -> {len(train_y)}; targets={targets}", flush=True)
     in_features = train_x.shape[1]
     head = nn.Sequential(nn.Linear(in_features, 64), nn.ReLU(), nn.Dropout(0.3), nn.Linear(64, 4)).to(a.device)
     opt = torch.optim.AdamW(head.parameters(), lr=1e-3, weight_decay=1e-4)
     best, best_state, history = float('inf'), None, []
     gen = torch.Generator().manual_seed(a.seed)
+    def write_json(name, payload):
+        temp = a.output_dir / f'.{name}.tmp'
+        temp.write_text(json.dumps(payload, indent=2))
+        os.replace(temp, a.output_dir / name)
+
     for epoch in range(1, a.epochs + 1):
         head.train()
         order = torch.randperm(len(train_y), generator=gen)
@@ -101,15 +114,34 @@ def main():
         history.append({'epoch': epoch, 'val_loss': vl, 'val_acc': vacc})
         if vl < best:
             best, best_state = vl, {k: v.detach().cpu().clone() for k, v in head.state_dict().items()}
+            torch.save({'classifier_state_dict': best_state, 'variant': variant,
+                        'input_features': in_features, 'best_epoch': epoch},
+                       a.output_dir / 'smote_classifier_head.pt')
+        torch.save({'epoch': epoch, 'classifier_state_dict': head.state_dict(),
+                    'optimizer_state_dict': opt.state_dict(), 'best_val_loss': best,
+                    'best_epoch': min(history, key=lambda item: item['val_loss'])['epoch'],
+                    'history': history}, a.output_dir / 'last_checkpoint.pt')
+        write_json('history_partial.json', {
+            'method': 'SMOTE on frozen hybrid classification features',
+            'train_counts_original': [int((labels['train'] == i).sum()) for i in range(4)],
+            'train_counts_after_smote': [int((train_y == i).sum()) for i in range(4)],
+            'target_counts': targets, 'best_val_loss': best, 'history': history,
+        })
+        print(f"Epoch {epoch:03d}/{a.epochs} | val_loss={vl:.4f} | val_acc={vacc:.4f}"
+              f" | best={best:.4f}", flush=True)
     head.load_state_dict(best_state); head.eval()
     with torch.no_grad():
         logits = head(feats['test'].to(a.device)).cpu()
         acc = (logits.argmax(1) == labels['test']).float().mean().item()
         kappa = tr.cohen_kappa_from_logits(logits, labels['test']).item()
-    a.output_dir.mkdir(parents=True, exist_ok=True)
     torch.save({'classifier_state_dict': best_state, 'variant': variant, 'input_features': in_features}, a.output_dir/'smote_classifier_head.pt')
-    (a.output_dir/'metrics.json').write_text(json.dumps({'method':'SMOTE on frozen hybrid class features','train_counts_original':[int((labels['train']==i).sum()) for i in range(4)],'train_counts_after_smote':[int((train_y==i).sum()) for i in range(4)],'target_counts':targets,'val_best_loss':best,'test_accuracy':acc,'test_kappa':kappa,'history':history},indent=2))
-    print(f"SMOTE train features: {len(labels['train'])} -> {len(train_y)}; validation acc={history[-1]['val_acc']:.4f}; test acc={acc:.4f}; kappa={kappa:.4f}")
+    write_json('metrics.json', {'method':'SMOTE on frozen hybrid class features',
+        'train_counts_original':[int((labels['train']==i).sum()) for i in range(4)],
+        'train_counts_after_smote':[int((train_y==i).sum()) for i in range(4)],
+        'target_counts':targets,'val_best_loss':best,'test_accuracy':acc,
+        'test_kappa':kappa,'history':history})
+    print(f"Completed: train features {len(labels['train'])} -> {len(train_y)}; "
+          f"test acc={acc:.4f}; kappa={kappa:.4f}; saved to {a.output_dir}", flush=True)
 
 if __name__ == '__main__':
     main()

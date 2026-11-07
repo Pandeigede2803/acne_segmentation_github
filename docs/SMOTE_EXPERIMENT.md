@@ -21,7 +21,7 @@ python scripts/train_smote_classifier_head.py \
   --output-dir PATH/smote_feature_experiment
 ```
 
-Skrip menghasilkan `smote_classifier_head.pt` dan `metrics.json` dengan jumlah kelas sebelum/sesudah SMOTE serta akurasi dan kappa test.
+Skrip membuat folder output saat mulai, mencetak progres ekstraksi fitur dan setiap epoch, lalu menyimpan `smote_classifier_head.pt` pada validasi terbaik, `last_checkpoint.pt` setiap epoch, dan `history_partial.json` secara berkala. Setelah evaluasi selesai, `metrics.json` berisi jumlah kelas sebelum/sesudah SMOTE serta akurasi dan kappa test.
 
 ## Batas interpretasi
 
