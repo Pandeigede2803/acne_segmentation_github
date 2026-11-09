@@ -68,8 +68,12 @@ def plot_results(run_dir, output_dir=None):
 
     matrix = data.get('test_confusion_matrix')
     if matrix is None:
-        print('Confusion matrix belum tersedia. Run lama/parsial tetap bisa diplot; '
-              'untuk confusion matrix, selesaikan training dengan script terbaru.')
+        if data.get('config', {}).get('skip_test'):
+            print('Run validation-only: confusion matrix test sengaja tidak dihitung. '
+                  'Gunakan Step 25 untuk audit confusion matrix validation tanpa training.')
+        else:
+            print('Confusion matrix belum tersedia. Run lama/parsial tetap bisa diplot; '
+                  'untuk confusion matrix, selesaikan training dengan script terbaru.')
         return output_dir
     size = len(matrix)
     if len(names) != size:
