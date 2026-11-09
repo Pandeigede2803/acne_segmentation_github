@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """SMOTE experiment on frozen hybrid classification features (train split only)."""
 import argparse
+import csv
 import json
 import os
 import sys
@@ -111,14 +112,20 @@ def main():
         with torch.no_grad():
             # Evaluate original train features only, without synthetic SMOTE samples.
             train_correct = 0
+            train_loss_sum = 0.0
             for xb, yb in zip(feats['train'].split(a.batch_size), labels['train'].split(a.batch_size)):
-                predictions = head(xb.to(a.device)).argmax(1).cpu()
+                train_logits = head(xb.to(a.device))
+                train_loss_sum += nn.functional.cross_entropy(
+                    train_logits, yb.to(a.device), reduction='sum').item()
+                predictions = train_logits.argmax(1).cpu()
                 train_correct += (predictions == yb).sum().item()
             train_acc = train_correct / len(labels['train'])
+            train_loss = train_loss_sum / len(labels['train'])
             val_logits = head(feats['val'].to(a.device))
             vl = nn.functional.cross_entropy(val_logits, labels['val'].to(a.device)).item()
             vacc = (val_logits.argmax(1).cpu() == labels['val']).float().mean().item()
-        history.append({'epoch': epoch, 'train_acc': train_acc, 'val_loss': vl, 'val_acc': vacc})
+        history.append({'epoch': epoch, 'train_loss': train_loss, 'train_acc': train_acc,
+                        'val_loss': vl, 'val_acc': vacc})
         if vl < best:
             best, best_state = vl, {k: v.detach().cpu().clone() for k, v in head.state_dict().items()}
             torch.save({'classifier_state_dict': best_state, 'variant': variant,
@@ -134,19 +141,28 @@ def main():
             'train_counts_after_smote': [int((train_y == i).sum()) for i in range(4)],
             'target_counts': targets, 'best_val_loss': best, 'history': history,
         })
-        print(f"Epoch {epoch:03d}/{a.epochs} | train_acc={train_acc:.4f} | val_loss={vl:.4f} | val_acc={vacc:.4f}"
+        print(f"Epoch {epoch:03d}/{a.epochs} | train_loss={train_loss:.4f} | train_acc={train_acc:.4f} | val_loss={vl:.4f} | val_acc={vacc:.4f}"
               f" | best={best:.4f}", flush=True)
     head.load_state_dict(best_state); head.eval()
     with torch.no_grad():
         logits = head(feats['test'].to(a.device)).cpu()
         acc = (logits.argmax(1) == labels['test']).float().mean().item()
         kappa = tr.cohen_kappa_from_logits(logits, labels['test']).item()
+    predictions = logits.argmax(1)
+    confusion = torch.bincount(labels['test'] * 4 + predictions, minlength=16).reshape(4, 4)
+    with (a.output_dir / 'test_class_predictions.csv').open('w', newline='') as handle:
+        writer = csv.writer(handle)
+        writer.writerow(['sample_index', 'true_label', 'predicted_label'])
+        writer.writerows((i, int(actual), int(predicted))
+                         for i, (actual, predicted) in enumerate(zip(labels['test'], predictions)))
     torch.save({'classifier_state_dict': best_state, 'variant': variant, 'input_features': in_features}, a.output_dir/'smote_classifier_head.pt')
     write_json('metrics.json', {'method':'SMOTE on frozen hybrid class features',
         'train_counts_original':[int((labels['train']==i).sum()) for i in range(4)],
         'train_counts_after_smote':[int((train_y==i).sum()) for i in range(4)],
         'target_counts':targets,'val_best_loss':best,'test_accuracy':acc,
-        'test_kappa':kappa,'history':history})
+        'test_kappa':kappa, 'test_confusion_matrix':confusion.tolist(),
+        'class_names':tr.LABEL_NAMES,
+        'best_epoch':min(history, key=lambda item: item['val_loss'])['epoch'], 'history':history})
     print(f"Completed: train features {len(labels['train'])} -> {len(train_y)}; "
           f"test acc={acc:.4f}; kappa={kappa:.4f}; saved to {a.output_dir}", flush=True)
 
