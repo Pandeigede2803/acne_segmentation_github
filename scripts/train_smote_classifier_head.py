@@ -49,7 +49,7 @@ def main():
     p.add_argument('--checkpoint', type=Path, required=True)
     p.add_argument('--metrics', type=Path, required=True)
     p.add_argument('--output-dir', type=Path, required=True)
-    p.add_argument('--epochs', type=int, default=100)
+    p.add_argument('--epochs', type=int, default=120)
     p.add_argument('--batch-size', type=int, default=64)
     p.add_argument('--seed', type=int, default=42)
     p.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
@@ -109,9 +109,16 @@ def main():
             loss.backward(); opt.step()
         head.eval()
         with torch.no_grad():
-            vl = nn.functional.cross_entropy(head(feats['val'].to(a.device)), labels['val'].to(a.device)).item()
-            vacc = (head(feats['val'].to(a.device)).argmax(1).cpu() == labels['val']).float().mean().item()
-        history.append({'epoch': epoch, 'val_loss': vl, 'val_acc': vacc})
+            # Evaluate original train features only, without synthetic SMOTE samples.
+            train_correct = 0
+            for xb, yb in zip(feats['train'].split(a.batch_size), labels['train'].split(a.batch_size)):
+                predictions = head(xb.to(a.device)).argmax(1).cpu()
+                train_correct += (predictions == yb).sum().item()
+            train_acc = train_correct / len(labels['train'])
+            val_logits = head(feats['val'].to(a.device))
+            vl = nn.functional.cross_entropy(val_logits, labels['val'].to(a.device)).item()
+            vacc = (val_logits.argmax(1).cpu() == labels['val']).float().mean().item()
+        history.append({'epoch': epoch, 'train_acc': train_acc, 'val_loss': vl, 'val_acc': vacc})
         if vl < best:
             best, best_state = vl, {k: v.detach().cpu().clone() for k, v in head.state_dict().items()}
             torch.save({'classifier_state_dict': best_state, 'variant': variant,
@@ -127,7 +134,7 @@ def main():
             'train_counts_after_smote': [int((train_y == i).sum()) for i in range(4)],
             'target_counts': targets, 'best_val_loss': best, 'history': history,
         })
-        print(f"Epoch {epoch:03d}/{a.epochs} | val_loss={vl:.4f} | val_acc={vacc:.4f}"
+        print(f"Epoch {epoch:03d}/{a.epochs} | train_acc={train_acc:.4f} | val_loss={vl:.4f} | val_acc={vacc:.4f}"
               f" | best={best:.4f}", flush=True)
     head.load_state_dict(best_state); head.eval()
     with torch.no_grad():
