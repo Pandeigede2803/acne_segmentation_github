@@ -3,7 +3,8 @@
 **Fokus: Proposed Hybrid Multi-Task dengan Augmentasi Offline 100% dan Ablation Study**
 
 > Dokumen ini hanya membahas training proposed augmented pada Step 11 dan
-> ablation augmented pada Step 20 di `acne_colab.ipynb`. Semua tabel hasil
+> ablation augmented pada Step 20, serta pembanding single-task pada Step 29
+> di `acne_colab.ipynb`. Semua tabel hasil
 > sengaja dikosongkan sampai artefak eksperimen tersebut tersedia dan diperiksa.
 > Sel kosong bukan nilai nol. Dokumen ini tidak menyatakan training sudah selesai.
 
@@ -23,7 +24,8 @@ Tujuan berikut mengacu pada proposal; ketercapaiannya akan dibahas setelah hasil
 
 **Batas implementasi:** mask yang dilatih saat ini bersifat biner (area lesi dan
 background), bukan klasifikasi tipe papul/pustul/komedo. Baseline ablation tetap
-multi-task, bukan pembanding single-task murni. Kedua batas ini perlu diperhatikan
+multi-task; pembanding single-task murni disediakan terpisah pada Step 29.
+Kedua batas ini perlu diperhatikan
 saat menjawab tujuan dan rumusan masalah; jangan menyimpulkan klaim yang tidak diuji.
 
 ## 3. Ruang lingkup eksperimen
@@ -32,6 +34,7 @@ saat menjawab tujuan dan rumusan masalah; jangan menyimpulkan klaim yang tidak d
 |---|---|---|
 | Training utama | 11 | Model lengkap proposed + augmentasi offline 100% |
 | Ablation | 20 | Enam varian + proposed pada data augmented dan protokol yang sebanding |
+| Pembanding single-task | 29 | ResNet-50 klasifikasi murni, train/validation augmented yang sama |
 
 Eksperimen lain tidak dimasukkan dalam laporan ini. Proposed pada Step 20
 merupakan kontrol yang dilatih terpisah tanpa evaluasi test. Hasil validation
@@ -256,7 +259,33 @@ validation loss minimum masing-masing varian.
 **Pembahasan hasil:**
 
 
-## 8. Jawaban rumusan masalah dan ketercapaian tujuan
+## 8. Pembanding single-task — Step 29
+
+ResNet-50 pretrained digunakan untuk klasifikasi severity saja, tanpa decoder,
+Spatial Attention, AMFM, MA-LDS, mask input, dan loss segmentasi/morfologi.
+Global pooling, proyeksi 128, serta classifier 64/dropout 0,3 mempertahankan
+lebar cabang global proposed. Ini bukan varian `baseline` multi-task pada ablation.
+
+Pembanding memakai train/validation dari manifest augmented yang sama, ImageNet
+normalization, augmentasi online, class weighting balanced, tanpa weighted sampler,
+seed dan anggaran dua fase yang sama dengan Step 11. Bobot awal berasal dari
+ImageNet, bukan checkpoint proposed. Test tidak dievaluasi. Dice/IoU tidak berlaku
+karena model tidak menghasilkan mask.
+
+Checkpoint dipilih dengan validation CE berbobot terendah. Proposed dipilih
+dengan total multi-task validation loss terendah. Jadi perbandingan ini menilai
+sistem keseluruhan, bukan mengisolasi kontribusi segmentasi saja; ablation tetap
+diperlukan. Kesamaan seed tidak menjamin inisialisasi head atau hasil bit-identik.
+
+| Model | Epoch terbaik | Val. accuracy | Val. Kappa | Val. Macro-F1 |
+|---|---:|---:|---:|---:|
+| ResNet-50 single-task | | | | |
+| Proposed augmented | | | | |
+
+**Pembahasan hasil:**
+
+
+## 9. Jawaban rumusan masalah dan ketercapaian tujuan
 
 Bagian ini diisi setelah hasil training utama dan ablation augmented diverifikasi.
 Keberhasilan implementasi dibedakan dari bukti peningkatan performa.
@@ -267,11 +296,11 @@ Keberhasilan implementasi dibedakan dari bukti peningkatan performa.
 | 2. Kontribusi fitur lokal terhadap klasifikasi | | |
 | 3. Evaluasi dan kontribusi komponen | | |
 
-Klaim dibanding single-task memerlukan pembanding single-task murni; tabel
-ablation di atas saja tidak memenuhi pembanding tersebut. Bukti manfaat
+Klaim dibanding single-task harus didukung hasil pembanding Step 29 setelah
+training selesai; tabel ablation saja tidak memenuhi pembanding tersebut. Bukti manfaat
 augmentasi dibanding tanpa augmentasi juga memerlukan kontrol tersendiri,
 dan bukan kesimpulan otomatis dari eksperimen yang seluruhnya augmented.
 
-## 9. Kesimpulan
+## 10. Kesimpulan
 
 **Diisi setelah hasil eksperimen augmented tersedia dan diperiksa.**
