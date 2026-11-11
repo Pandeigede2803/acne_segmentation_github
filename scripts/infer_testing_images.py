@@ -63,7 +63,9 @@ def parse_args() -> argparse.Namespace:
                         help="auto membaca metrics.json di samping checkpoint; fallback ke none")
     parser.add_argument("--variant", choices=("auto", "proposed", "baseline", "no_attention", "no_dilation",
                                                 "no_amfm", "lds", "no_fusion"), default="auto",
-                        help="auto membaca varian model dari metrics.json")
+                         help="auto membaca varian model dari metrics.json")
+    parser.add_argument("--strict-run", action="store_true",
+                        help="Verify manifest/config/checkpoint against saved Step 11 provenance before inference.")
     parser.add_argument(
         "--model-type",
         choices=("baseline", "proposal"),
@@ -116,7 +118,7 @@ def row_image_path(row: dict[str, str], manifest_path: Path) -> Path:
 
 
 def row_mask_path(row: dict[str, str], manifest_path: Path) -> Path | None:
-    value = row.get("refined_mask") or row.get("mask_path") or row.get("circle_mask")
+    value = row.get("mask_path") or row.get("refined_mask") or row.get("circle_mask")
     if not value:
         return None
     return resolve_manifest_path(value, manifest_path)
@@ -236,9 +238,16 @@ def cohen_kappa_from_pairs(true_labels: list[int], pred_labels: list[int], num_c
 
 def main() -> None:
     args = parse_args()
+    verified_run = None
+    if args.strict_run:
+        from inference_run_guard import validate_arguments
+        verified_run = validate_arguments(args)
     device = base.resolve_device(args.device)
     input_normalization = resolve_input_normalization(args)
     model_variant = resolve_model_variant(args)
+    if verified_run is not None:
+        input_normalization = verified_run["input_normalization"]
+        model_variant = verified_run["variant"]
     rows = load_rows(args.manifest, args.split)
 
     if not args.checkpoint.exists():
@@ -348,6 +357,8 @@ def main() -> None:
         "pred_mask_dir": str(pred_dir),
         "overlay_dir": str(overlay_dir),
     }
+    if verified_run is not None:
+        summary["verified_training_run"] = verified_run
     summary_path = args.output_dir / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
