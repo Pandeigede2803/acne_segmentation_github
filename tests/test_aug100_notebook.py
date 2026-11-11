@@ -15,6 +15,7 @@ class AugmentationNotebookTests(unittest.TestCase):
         cells = json.loads(NOTEBOOK.read_text())["cells"]
         cls.training = "".join(cells[28]["source"])
         cls.ablation = "".join(cells[49]["source"])
+        cls.cells = cells
 
     def test_cells_are_valid_python(self):
         ast.parse(self.training)
@@ -59,6 +60,23 @@ class AugmentationNotebookTests(unittest.TestCase):
         self.assertIn("json.loads(protocol_path.read_text()) != ablation_protocol",
                       self.ablation)
         self.assertIn("ABLATION_MANIFEST.read_text() != manifest_text", self.ablation)
+
+    def test_v2_checks_before_training(self):
+        self.assertIn("v2_audit.audit_manifest", self.training)
+        self.assertIn("v2_audit.audit_manifest", self.ablation)
+        self.assertIn("v2_audit.audit_augmented_manifest", self.training)
+        self.assertIn("v2_audit.audit_augmented_manifest", self.ablation)
+        self.assertIn("acne04v2_official1204", self.training)
+
+    def test_preprocessing_and_annotation_cells(self):
+        for index in (13, 18, 19, 21, 23, 26):
+            ast.parse("".join(self.cells[index]["source"]))
+        annotation = "".join(self.cells[13]["source"])
+        self.assertIn("V2_ANNOT_SHA256", annotation)
+        self.assertNotIn("find_annotation_path", annotation)
+        preprocessing = "".join(self.cells[23]["source"])
+        self.assertIn("v2_audit.preprocessing_provenance", preprocessing)
+        self.assertIn("check=True", preprocessing)
 
 
 if __name__ == "__main__":

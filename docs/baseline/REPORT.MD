@@ -1,169 +1,205 @@
 # Laporan Penelitian
 
-11 NOVEMBER 2026
+**Fokus: Proposed Hybrid Multi-Task dengan Augmentasi Offline 100% dan Ablation Study**
 
-Tujuan, Prosedur Evaluasi, dan Hasil Eksperimen Model Hybrid Multi-Task
+> Dokumen ini hanya membahas training proposed augmented pada Step 11 dan
+> ablation augmented pada Step 20 di `acne_colab.ipynb`. Semua tabel hasil
+> sengaja dikosongkan sampai artefak eksperimen tersebut tersedia dan diperiksa.
+> Sel kosong bukan nilai nol. Dokumen ini tidak menyatakan training sudah selesai.
 
 ## 1. Rumusan masalah
+
 1. Bagaimana merancang dan membangun kerangka kerja hibrida yang mengintegrasikan segmentasi lesi presisi berbasis Dilated UNet dengan mekanisme atensi spasial dan klasifikasi keparahan jerawat secara simultan dalam satu unified deep learning pipeline?
 2. Bagaimana memanfaatkan representasi fitur dari tugas segmentasi (lokal) untuk meningkatkan performa tugas klasifikasi global (Deep Representation Learning) sehingga menghasilkan sistem yang lebih akurat dibandingkan pendekatan single-task?
 3. Bagaimana mengevaluasi performa kerangka kerja yang diusulkan pada dataset ACNE04-v2 menggunakan metrik evaluasi standar dari domain computer vision dan pencitraan medis, serta membuktikan kontribusi setiap komponen arsitektur melalui ablation study?
 
-## 2. Tujuan utama
-Penelitian ini memiliki tiga tujuan utama dalam pengembangan model hybrid multi-task untuk analisis citra ACNE04-v2:
+## 2. Tujuan penelitian
 
-1. Mengembangkan Kerangka Kerja Hibrida: Mengembangkan kerangka kerja hibrida Deep Learning yang mampu melakukan segmentasi lesi jerawat secara presisi (mengenali tipe dan lokasi lesi) sekaligus mengklasifikasikan tingkat keparahan berdasarkan kriteria Hayashi secara otomatis.
-2. Eksplorasi Representation Learning: Mengeksplorasi dan mengoptimalkan mekanisme Deep Representation Learning yang memanfaatkan fitur representasi dari cabang segmentasi untuk memperkuat cabang klasifikasi global dalam arsitektur multi-task learning.
-3. Evaluasi Performa & Ablation Study: Mengevaluasi performa model yang dikembangkan pada dataset ACNE04-v2 menggunakan metrik Akurasi, Cohen's Kappa, Dice Coefficient, dan Intersection over Union (IoU) serta membuktikan kontribusi komponen AMFM dan MA-LDS melalui ablation study.
+Tujuan berikut mengacu pada proposal; ketercapaiannya akan dibahas setelah hasil tersedia.
 
+1. Mengembangkan kerangka kerja hibrida Deep Learning yang mampu melakukan segmentasi lesi jerawat secara presisi (mengenali tipe dan lokasi lesi) sekaligus mengklasifikasikan tingkat keparahan berdasarkan kriteria Hayashi secara otomatis.
+2. Mengeksplorasi dan mengoptimalkan mekanisme Deep Representation Learning yang memanfaatkan fitur representasi dari cabang segmentasi untuk memperkuat cabang klasifikasi global dalam arsitektur multi-task learning.
+3. Mengevaluasi performa model pada dataset ACNE04-v2 menggunakan Accuracy, Cohen's Kappa, Dice Coefficient, dan IoU serta menguji kontribusi AMFM dan MA-LDS melalui ablation study.
 
-## 3. Dataset dan konsistensi sumber
+**Batas implementasi:** mask yang dilatih saat ini bersifat biner (area lesi dan
+background), bukan klasifikasi tipe papul/pustul/komedo. Baseline ablation tetap
+multi-task, bukan pembanding single-task murni. Kedua batas ini perlu diperhatikan
+saat menjawab tujuan dan rumusan masalah; jangan menyimpulkan klaim yang tidak diuji.
 
-Proposal menyebut ACNE04-v2 dengan 1.204 citra dan 32.443 anotasi sirkular.
-Perbedaan yang dijelaskan dalam proposal adalah anotasi bounding box pada
-ACNE04 original dan anotasi sirkular pada v2. Identitas versi dataset aktual
-harus ditelusuri dari arsip dan anotasi sumber, bukan nama folder saja.
+## 3. Ruang lingkup eksperimen
 
-**Ada ketidaksesuaian:** run Oktober menggunakan 1.457 citra, dengan split
-1.017 train, 216 validation, dan 224 test, bukan 1.204 citra pada proposal.
+| Kelompok | Step | Fokus |
+|---|---|---|
+| Training utama | 11 | Model lengkap proposed + augmentasi offline 100% |
+| Ablation | 20 | Enam varian + proposed pada data augmented dan protokol yang sebanding |
 
-| Kelas | Jumlah menurut proposal | Jumlah dalam catatan eksperimen 1.457 citra |
-|---|---:|---:|
-| Level 0 / mild | 470 | 497 |
-| Level 1 / moderate | 579 | 637 |
-| Level 2 / severe | 133 | 186 |
-| Level 3 / very severe | 22 | 137 |
-| **Total** | **1.204** | **1.457** |
+Eksperimen lain tidak dimasukkan dalam laporan ini. Proposed pada Step 20
+merupakan kontrol yang dilatih terpisah tanpa evaluasi test. Hasil validation
+kontrol ini menjadi pembanding utama antar-varian ablation, bukan hasil test Step 11.
 
-Distribusi eksperimen tersebut berasal dari catatan terdahulu dan perlu
-dicocokkan kembali dengan manifest tiap run. Laporan final perlu menjelaskan
-asal tambahan citra, versi anotasi, sumber label severity, dan kriteria inklusi.
-Prediksi label severity dataset bukan bukti validasi klinis independen.
+## 4. Dataset dan pembagian data
 
+Dataset yang dituju adalah ACNE04-v2, subset dari gambar ACNE04 original.
+[JSON resmi](https://github.com/AIpourlapeau/acne04v2/blob/5930801fc75fb1a7084c26c1db3095d3e42d1f55/Acne04-v2_annotations.json)
+memuat **1.204 gambar unik** dan **32.443 anotasi lesi**. Berdasarkan awalan nama
+file, distribusinya adalah level 0: 470, level 1: 579, level 2: 133, level 3: 22.
+Label severity pada pipeline mengikuti awalan nama file original, **bukan hasil
+perhitungan ulang jumlah lesi dari anotasi v2**.
 
-## 4. Proses penelitian secara global
+Folder sumber boleh berisi lebih banyak file, misalnya 1.457 gambar. File di luar
+daftar JSON v2 tidak dimasukkan ke manifest. Hitungan file folder tidak boleh
+dilaporkan sebagai jumlah sampel penelitian v2. Jumlah tiap split pada tabel
+berikut tetap harus diisi dari manifest aktual setelah audit, bukan perkiraan.
 
-1. Membaca citra, anotasi lesi, dan label severity.
-2. Membentuk circle mask dan refined mask berbasis Lab/HSV.
-3. Menyiapkan pasangan foto-mask dan manifest train/validation/test.
-4. Melatih shared encoder ResNet-50, Spatial Attention, dan dilated decoder.
-5. Mengekstrak morfologi prediksi mask: area, density, cx, cy, dan spread.
-6. Menggabungkan fitur global dan morfologi melalui AMFM untuk klasifikasi.
-7. Mengoptimalkan loss BCE + Dice, KL dengan MA-LDS, dan morphology MSE.
-8. Memilih checkpoint dengan total validation loss terendah.
-9. Melakukan CV, ablation, dan evaluasi test sebagai rangkaian terpisah.
+Notebook memverifikasi anotasi dengan commit resmi
+`5930801fc75fb1a7084c26c1db3095d3e42d1f55` dan SHA-256
+`ae03fc23fed0925c254dc4c4c9e55b539bd199b236151cb649857378a43539e9`.
+Manifest asli wajib berisi tepat 1.204 nama unik yang sama dengan JSON resmi,
+jumlah lesi per gambar harus cocok, dan seluruh file pasangan harus tersedia.
+Anotasi XML original dan cache manifest tanpa provenance yang sesuai ditolak.
 
-Test tidak digunakan untuk tuning. Train, validation, validation folds CV,
-dan test mengukur subset berbeda dan harus dilaporkan terpisah.
+Pembagian train/validation/test ditetapkan **sebelum** augmentasi. Hanya train
+yang ditambah. Validation dan test tetap memakai baris asli tanpa resampling.
+Periksa duplikasi dan kebocoran subjek/sumber antar-split.
 
-
-## 5. Preprocessing
-
-Perlu dibedakan pengolahan foto dan pembentukan mask:
-
-- Notebook terbaru mengatur foto ke 320 × 320 dengan letterbox dan mode `none`,
-  tanpa equalization/sharpening warna. Catatan penghapusan perubahan warna
-  agresif belum membuktikan bahwa perubahan tersebut menyebabkan kenaikan
-  accuracy; diperlukan eksperimen terkontrol.
-- **Lab relative redness dan HSV tetap digunakan untuk membuat refined mask**
-  di dalam anotasi lingkaran. Jika hasil deteksi terlalu kecil, digunakan fallback
-  circle mask. Jadi, redness tidak dihapus dari seluruh pipeline.
-
-Preprocessing dapat dilewati jika manifest sudah ada. Opsi notebook terbaru
-belum membuktikan pengolahan yang dipakai run lama; artefak aktual perlu diperiksa.
-
-Mask bersifat biner: background dan area lesi, bukan kategori papul/pustul/komedo.
-Dengan demikian, tujuan “mengenali tipe lesi” belum dievaluasi. Dice/IoU mengukur
-kesesuaian terhadap target mask hasil preprocessing, bukan langsung terhadap
-kontur manual tervalidasi dokter.
-
-
-
-## 6. Eksperimen 24 Oktober — Step 11
-
-Model proposed Hybrid ResNet-50 + AMFM + MA-LDS menggunakan class weighting
-balanced, tanpa weighted sampler. Training terdiri atas 30 epoch freeze encoder
-dan 90 epoch full fine-tuning. Augmentasi online train meliputi rotasi, flip,
-dan brightness/contrast; validation/test tanpa augmentasi.
-
-Sumber: [`metrics.json`](../24okt/test/metrics.json) dan
-[laporan Step 11](../laporan_penelitian_24_oktober_step11.md).
-
-| Evaluasi | Epoch | Accuracy |
-|---|---:|---:|
-| Train pada checkpoint terbaik | 116 | 71,48% |
-| Validation pada checkpoint terbaik | 116 | 67,13% |
-| Test checkpoint terbaik, 224 citra | — | **71,88%** |
-
-| Metrik test | Hasil |
-|---|---:|
-| Cohen's Kappa | 0,5895 |
-| Dice | 0,4786 |
-| IoU | 0,3321 |
-
-Ini bukan eksperimen pertama seluruh penelitian; hasil terdahulu juga tercatat.
-Identitas preprocessing dan versi script persis saat run belum seluruhnya terkunci.
-
-
-## 7. Eksperimen augmentasi offline 100%
-
-**Hasil numerik run ini belum teridentifikasi dari sumber yang diperiksa.**
-Augmentasi online pada run biasa bukan bukti augmentasi offline 100%.
-
-| Informasi yang diperlukan | Status |
-|---|---|
-| Folder run dan `metrics.json` | Belum teridentifikasi |
-| Manifest augmented dan jumlah train per kelas | Belum terverifikasi |
-| Definisi 100%: penggandaan data atau target keseimbangan kelas | Perlu dijelaskan |
-| Epoch terbaik dan metrik validation/test | Belum tersedia untuk diisi |
-
-Menurut [panduan augmentasi offline](../OFFLINE_AUGMENTATION.md), hanya train
-yang ditambah; validation/test tidak diubah. Panduan itu menjelaskan target
-moderat 75% kelas terbesar, bukan bukti protokol 100% aktual. SMOTE adalah
-eksperimen berbeda pada fitur klasifikasi, bukan penambahan foto-mask.
-
-## 8. Model lengkap flowchart — Step 21
-
-Run yang dirujuk sebagai 25 Oktober memakai `proposed`: Spatial Attention,
-dilated decoder, AMFM, dan MA-LDS aktif. Training 30 + 90 epoch memakai class
-weighting balanced serta weighted sampler. Enam varian ablation bukan komponen
-yang dijalankan bersamaan; setiap varian adalah model terpisah.
-
-Sumber: [`metrics.json`](../25okt/metrics.json). Checkpoint terbaik berdasarkan
-total validation loss adalah **epoch 115**, bukan epoch terakhir.
-
-| Evaluasi | Accuracy | Kappa | Dice | IoU |
+| Kelas | Train asli | Train setelah augmentasi 100% | Validation asli | Test asli |
 |---|---:|---:|---:|---:|
-| Validation checkpoint terbaik | 49,54% | 0,2978 | 0,5090 | 0,3571 |
-| Test checkpoint terbaik | 56,25% | 0,3906 | 0,5025 | 0,3536 |
+| Level 0 / mild | | | | |
+| Level 1 / moderate | | | | |
+| Level 2 / severe | | | | |
+| Level 3 / very severe | | | | |
+| **Total** | | | | |
 
-Train accuracy pada epoch 115 adalah 78,66%. Macro-F1 test sebesar 0,5745.
-Recall test level 0–3 berturut-turut 84,21%, 24,74%, 89,66%, dan 54,55%.
-Kelemahan utama klasifikasi terlihat pada level 1.
+## 5. Preprocessing dan augmentasi offline 100%
 
-Dibanding 24 Oktober, accuracy test turun 15,63 poin persentase sementara Dice
-naik sekitar 0,0239. Ini belum membuktikan efek tunggal weighted sampler karena
-versi script dan identitas persis data antar-run belum dikunci.
+### 5.1 Preprocessing
 
-## 9. Ablation study lengkap — validation
+- Foto dipersiapkan menggunakan letterbox pada kanvas 320 × 320 sesuai
+  konfigurasi notebook, tanpa equalization/sharpening pada mode `none`.
+- Target mask dibuat dari anotasi lingkaran dan deteksi warna Lab relative
+  redness serta HSV, dibatasi pada area anotasi dan dirapikan secara morfologi.
+- Fallback circle mask digunakan jika hasil deteksi terlalu kecil.
+- Lab/HSV dipakai untuk pembentukan target mask; ini berbeda dari peningkatan
+  warna foto masukan. Dice/IoU mengukur kesesuaian terhadap target mask tersebut,
+  bukan otomatis terhadap kontur manual yang divalidasi dokter.
 
-Sumber enam varian: [log ablation](../ABALATION_COMPLETE.MD).
-Proposed berasal dari history `docs/25okt/metrics.json`. Setiap baris menggunakan
-epoch dengan **total validation loss terendah**, bukan accuracy tertinggi.
+Manifest yang sudah ada dapat dipakai kembali oleh notebook. Pastikan foto-mask
+aktual sesuai konfigurasi yang dilaporkan, bukan hanya opsi pada cell.
 
-| Varian | Epoch | Train accuracy | Val. accuracy | Val. Kappa | Val. Dice | Val. IoU | Val. loss |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| baseline | 96 | 80,14% | 60,19% | 0,4458 | 0,5096 | 0,3590 | 1,4145 |
-| no_attention | 111 | 77,29% | 53,24% | 0,3532 | 0,5154 | 0,3623 | 0,9897 |
-| no_dilation | 115 | 78,66% | 52,78% | 0,3449 | **0,5204** | **0,3664** | 1,0684 |
-| no_amfm | 107 | 86,73% | 60,19% | 0,4231 | 0,5153 | 0,3614 | 1,0812 |
-| lds | 117 | 74,04% | 50,00% | 0,3173 | 0,5025 | 0,3513 | 1,3134 |
-| no_fusion | 112 | 83,97% | **63,89%** | **0,4831** | 0,5077 | 0,3565 | 0,9779 |
-| **proposed** | **115** | **78,66%** | **49,54%** | **0,2978** | **0,5090** | **0,3571** | **1,0946** |
+### 5.2 Definisi augmentasi 100%
 
-### Definisi varian menurut trainer lokal
+`AUGMENT_TARGET_RATIO = 1.0` berarti setiap kelas train ditambah hingga mencapai
+**jumlah kelas train asli terbesar**, bukan menggandakan semua foto.
+Sampel asli tetap dipertahankan dan pasangan sintetis hanya berasal dari train.
 
-| Varian | Attention | Dilation | Fusi untuk klasifikasi | Smoothing |
+- Rotasi dan horizontal flip diterapkan berpasangan pada foto dan mask.
+- Brightness/contrast hanya diterapkan pada foto.
+- Validation/test tidak ditambah atau diubah.
+- Semua varian ablation memakai manifest augmented yang sama, bukan membuat
+  pasangan augmentasi offline baru untuk tiap varian.
+- Augmentasi online pada trainer tetap aktif di train; ini tambahan terhadap
+  augmentasi offline. Validation/test tidak memakai augmentasi online.
+
+## 6. Training utama — Step 11
+
+### 6.1 Model lengkap proposed
+
+Alur model:
+
+```text
+Foto → Shared encoder ResNet-50 → Spatial Attention
+                                ├─ Dilated decoder → Mask prediksi
+                                │                    → Vektor morfologi
+                                └─ Global pooling → Fitur global
+Fitur morfologi + fitur global → AMFM → Klasifikasi severity
+```
+
+Vektor morfologi mencakup area, density, cx, cy, dan spread. MA-LDS membentuk
+distribusi target klasifikasi berdasarkan morfologi target pada proses training.
+Model mengoptimalkan loss segmentasi BCE + Dice, loss klasifikasi KL, dan
+morphology consistency MSE.
+
+### 6.2 Konfigurasi yang ditetapkan
+
+Tabel ini adalah protokol, bukan hasil. Cocokkan kembali dengan konfigurasi
+tersimpan saat mengisi hasil final.
+
+| Parameter | Konfigurasi |
+|---|---|
+| Varian | `proposed` |
+| Manifest | `AUGMENTED_MANIFEST` dari Step 10a |
+| Target augmentasi offline | 1,0 × jumlah kelas train asli terbesar per kelas |
+| Encoder | ResNet-50 pretrained, normalisasi ImageNet |
+| Input / batch default | 320 × 320 / 16, mengikuti konfigurasi pusat |
+| Fase training default | 30 epoch freeze + 90 epoch fine-tuning |
+| Class weighting | `balanced`, dihitung dari data train yang digunakan |
+| Weighted sampler | Tidak digunakan |
+| Smoothing | MA-LDS |
+| Seed | 42 |
+| Pemilihan checkpoint | Total validation loss terendah |
+| Evaluasi test | Setelah training; tidak digunakan untuk tuning |
+
+Run baru harus memakai `RUN_ID` yang belum digunakan. Resume hanya untuk run
+yang sama dengan sumber dan konfigurasi tetap. Identitas sumber dicatat dalam
+`augmentation_training_provenance.json`; jangan menimpa hasil eksperimen lain.
+
+### 6.3 Identitas run
+
+| Informasi | Isian |
+|---|---|
+| Run ID / folder output | |
+| Tanggal training | |
+| Manifest dan SHA-256 | |
+| Trainer dan SHA-256 | |
+| Perangkat dan versi pustaka | |
+| Status selesai | |
+| Epoch checkpoint terbaik | |
+| Lokasi `metrics.json` dan checkpoint | |
+
+### 6.4 Hasil utama
+
+Train dan validation diisi dari epoch checkpoint terbaik yang sama. Test diisi
+dari evaluasi checkpoint tersebut, bukan dari epoch terakhir secara otomatis.
+
+| Evaluasi | Epoch terbaik | Accuracy | Kappa | Dice | IoU | Total loss |
+|---|---:|---:|---:|---:|---:|---:|
+| Train | | | | | | |
+| Validation | | | | | | |
+| Test | | | | | | |
+
+### 6.5 Hasil klasifikasi per kelas pada test
+
+| Kelas | Precision | Recall | F1-score | Support |
+|---|---:|---:|---:|---:|
+| Level 0 | | | | |
+| Level 1 | | | | |
+| Level 2 | | | | |
+| Level 3 | | | | |
+| Macro average | | | | |
+| Weighted average | | | | |
+
+Confusion matrix, visualisasi target vs prediksi mask, dan kurva training akan
+ditambahkan dari artefak run yang sama setelah tersedia.
+
+## 7. Ablation study augmented — Step 20
+
+### 7.1 Protokol perbandingan
+
+- Mengambil hanya train/validation dari manifest augmented Step 11.
+- Menggunakan class weighting balanced, tanpa weighted sampler, dan konfigurasi
+  input, batch, epoch, seed, serta sumber trainer yang sesuai Step 11.
+- Tujuh model dilatih terpisah: enam varian dan satu proposed lengkap.
+- Test tidak dievaluasi (`--skip-test-eval`).
+- Setiap run dipilih berdasarkan total validation loss terendah.
+- Folder ablation terpisah dari training utama dan hasil eksperimen lain.
+  Varian selesai dibaca kembali, varian terputus di-resume; pengulangan dari
+  awal harus memakai folder baru.
+- Catatan protokol dan hash tersimpan dalam `ablation_provenance.json`.
+  Pemeriksaan hash belum mencakup isi masing-masing foto/mask.
+
+### 7.2 Definisi varian
+
+| Varian | Spatial Attention | Dilation | Fusi untuk klasifikasi | Smoothing |
 |---|---|---|---|---|
 | baseline | Tidak | Tidak | Global saja | Tidak |
 | no_attention | Tidak | Ya | AMFM | MA-LDS |
@@ -173,78 +209,69 @@ epoch dengan **total validation loss terendah**, bukan accuracy tertinggi.
 | no_fusion | Ya | Ya | Global saja | MA-LDS |
 | proposed | Ya | Ya | AMFM | MA-LDS |
 
-Semua varian masih memiliki decoder segmentasi dan shared encoder. Baseline
-bukan single-task murni. `no_amfm` juga mengubah dimensi input classifier akibat
-concatenation. Varian `lds` memakai smoothing tetap pada implementasi lokal,
-bukan otomatis reproduksi penuh metode Prokhorov dan Kalinin.
+Semua varian tetap memiliki cabang segmentasi dan shared encoder. `baseline`
+mengubah beberapa komponen sekaligus sehingga bukan ablasi satu komponen.
+`no_amfm` mengganti AMFM dengan concatenation dan mengubah dimensi input
+classifier. `lds` adalah smoothing tetap pada implementasi lokal, bukan otomatis
+reproduksi penuh metode referensi. MA-LDS yang tetap aktif pada `no_fusion`
+berarti varian tersebut masih memakai informasi morfologi target saat training;
+yang dihilangkan adalah fusi fitur morfologi prediksi untuk klasifikasi.
 
-### Interpretasi dan batas perbandingan
+### 7.3 Identitas eksperimen ablation
 
-- Accuracy `no_fusion` lebih tinggi sekitar **14,35 poin persentase** daripada
-  proposed; `no_amfm` lebih tinggi sekitar **10,65 poin persentase**.
-- Jika kondisi aktual setara, satu run ini belum mendukung manfaat AMFM/fusion
-  untuk meningkatkan klasifikasi. Hasil negatif tetap temuan penelitian yang sah.
-- Proposed memiliki accuracy sedikit lebih rendah daripada `lds`, tetapi Dice/IoU
-  sedikit lebih tinggi. Manfaat MA-LDS belum konsisten lintas metrik.
-- `no_dilation` memiliki Dice/IoU tertinggi pada tabel; selisih kecil belum
-  membuktikan signifikansi statistik atau keunggulan umum.
-- Notebook membentuk manifest ablation dari train/validation manifest filtered
-  yang dipakai Step 21 dan mengatur protokol training yang sebanding. Kesamaan
-  data serta versi trainer saat run aktual masih perlu diverifikasi.
-- Loss antar-varian tidak otomatis setara karena target klasifikasi berbeda.
-  Loss dipakai memilih checkpoint dalam tiap run, bukan dasar tunggal ranking.
-- Jangan membandingkan validation ini langsung dengan test atau rata-rata CV.
-  Satu seed belum membuktikan kestabilan statistik.
+| Informasi | Isian |
+|---|---|
+| Folder ablation | |
+| Run Step 11 yang menjadi sumber protokol | |
+| Manifest train/validation dan SHA-256 | |
+| Trainer dan SHA-256 | |
+| Status ketujuh varian | |
+| Lokasi `ablation_results.csv` | |
 
-Rincian: [hasil ablation validation](../HASIL_ABLATION_VALIDASI.md).
+### 7.4 Hasil ablation — validation
 
-## 10. Cross-validation
+Semua angka harus berasal dari run augmented ini, pada epoch dengan total
+validation loss minimum masing-masing varian.
 
-Lima fold dibentuk hanya dari 1.017 citra train. Validation asli dan test asli
-tidak digunakan sebagai validation folds. Angka ini berbeda sumber evaluasinya
-dari validation final pada tabel ablation dan metrik test.
+| Varian | Epoch terbaik | Train accuracy | Val. accuracy | Val. Kappa | Val. Dice | Val. IoU | Val. loss |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| baseline | | | | | | | |
+| no_attention | | | | | | | |
+| no_dilation | | | | | | | |
+| no_amfm | | | | | | | |
+| lds | | | | | | | |
+| no_fusion | | | | | | | |
+| proposed | | | | | | | |
 
-| Metrik | Mean ± SD |
-|---|---:|
-| Accuracy | 47,98% ± 2,67% |
-| Cohen's Kappa | 0,2958 ± 0,0341 |
-| Dice | 0,4924 ± 0,0155 |
-| IoU | 0,3457 ± 0,0135 |
+### 7.5 Rencana analisis
 
-Sumber: [laporan flowchart](../25okt/laporan_penelitian_25_oktober_flowchart.md).
+1. Bandingkan setiap varian terhadap proposed pada validation yang sama.
+2. Bahas klasifikasi dan segmentasi secara terpisah; keduanya tidak harus meningkat
+   bersamaan. Jangan membandingkan validation ablation dengan test training utama.
+3. Gunakan loss untuk memilih checkpoint dalam run, bukan sebagai ukuran tunggal
+   keunggulan antar-varian dengan distribusi target berbeda.
+4. Laporkan arah perubahan apa adanya; komponen tidak harus memberi efek positif.
+5. Satu seed belum membuktikan kestabilan atau signifikansi statistik.
 
-## 11. Jawaban rumusan masalah dan ketercapaian tujuan
+**Pembahasan hasil:**
 
-| Rumusan masalah | Jawaban berdasarkan bukti saat ini | Kekurangan |
+
+## 8. Jawaban rumusan masalah dan ketercapaian tujuan
+
+Bagian ini diisi setelah hasil training utama dan ablation augmented diverifikasi.
+Keberhasilan implementasi dibedakan dari bukti peningkatan performa.
+
+| Rumusan masalah | Bukti dari eksperimen augmented | Jawaban / keterbatasan |
 |---|---|---|
-| 1. Membangun pipeline hybrid simultan | Terjawab secara implementasi: satu model menghasilkan mask dan severity. | Klaim presisi dibatasi kualitas mask; klasifikasi tipe lesi belum dievaluasi. |
-| 2. Fitur lokal meningkatkan klasifikasi dibanding single-task | Fusi diimplementasikan dan diuji, tetapi peningkatan klasifikasi belum didukung hasil ablation. | Pembanding single-task murni yang terkontrol belum tersedia. |
-| 3. Evaluasi dan kontribusi komponen | Metrik, CV, enam varian, dan proposed sudah dilaporkan. | Konsistensi dataset/protokol aktual dan signifikansi kontribusi belum dibuktikan. |
+| 1. Pipeline hybrid simultan | | |
+| 2. Kontribusi fitur lokal terhadap klasifikasi | | |
+| 3. Evaluasi dan kontribusi komponen | | |
 
-Tujuan pengembangan kerangka hybrid tercapai secara teknis, tetapi bagian
-“mengenali tipe lesi” belum tercapai. Eksplorasi representation learning sudah
-dilakukan; klaim fitur lokal memperkuat klasifikasi belum terpenuhi. Evaluasi
-telah dilaksanakan, tetapi tidak membuktikan semua komponen meningkatkan performa.
+Klaim dibanding single-task memerlukan pembanding single-task murni; tabel
+ablation di atas saja tidak memenuhi pembanding tersebut. Bukti manfaat
+augmentasi dibanding tanpa augmentasi juga memerlukan kontrol tersendiri,
+dan bukan kesimpulan otomatis dari eksperimen yang seluruhnya augmented.
 
-**Rumusan masalah terjawab tidak berarti hipotesis keunggulan metode terbukti.**
-Tidak ada persentase pencapaian resmi yang dapat dihitung hanya dari accuracy.
+## 9. Kesimpulan
 
-## 12. Kesimpulan dan tindak lanjut
-
-Kerangka hybrid segmentasi dan klasifikasi berhasil dikembangkan serta dievaluasi.
-Model final menghasilkan accuracy test 56,25%, Kappa 0,3906, Dice 0,5025, dan
-IoU 0,3536. Pada validation yang dilaporkan, proposed belum mengungguli model
-tanpa fusion dalam klasifikasi. Laporan belum dapat menyatakan AMFM atau fitur
-morfologi terbukti meningkatkan klasifikasi dibanding single-task.
-
-Prioritas berikutnya:
-
-1. Jelaskan perbedaan 1.204 vs 1.457 citra dan identitas versi dataset.
-2. Verifikasi split, foto-mask, versi trainer, dan konfigurasi antar-run; periksa
-   duplikasi serta kebocoran subjek/sumber.
-3. Lengkapi hasil augmentasi offline 100% dari artefak run yang sesuai.
-4. Siapkan pembanding single-task murni bila klaim tersebut dipertahankan.
-5. Gunakan validation/CV untuk eksperimen lanjutan, bukan tuning pada test.
-
-Tidak diperlukan training ulang hanya untuk melengkapi tabel ablation ini.
-
+**Diisi setelah hasil eksperimen augmented tersedia dan diperiksa.**
