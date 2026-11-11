@@ -9,6 +9,78 @@ from collections import Counter
 from pathlib import Path
 
 
+def recover_source_run(output_dir):
+    """Recover image-only inputs from trusted Step 11 records after runtime reset.
+
+    The original raw images/annotation/trainer may have lived on /content and
+    disappeared. They are not needed by this classifier. Their historical
+    identity stays in provenance; persisted manifests must still match exactly.
+    """
+    output_dir = Path(output_dir)
+    record_path = output_dir / "augmentation_training_provenance.json"
+    if not record_path.is_file():
+        raise FileNotFoundError(f"Provenance Step 11 tidak ditemukan: {record_path}. Periksa ST_SOURCE_RUN, bukan mengulang training.")
+    protocol = json.loads(record_path.read_text())
+    command = protocol["command"]
+    def option(flag):
+        if flag not in command:
+            raise ValueError(f"Provenance Step 11 tidak memiliki {flag}.")
+        return command[command.index(flag) + 1]
+
+    if (option("--variant") != "proposed" or option("--label-distribution") != "malds"
+            or option("--class-weighting") != "balanced" or protocol["weighted_sampler"]
+            or protocol["target_ratio"] != 1.0 or "--weighted-sampler" in command
+            or "--pretrained" not in command):
+        raise ValueError("Sumber bukan proposed augmented 100% balanced tanpa sampler.")
+    hashes = protocol["sha256"]
+    augmented = Path(option("--manifest"))
+    originals = [Path(p) for p in hashes if Path(p).name == "refined_manifest.csv"]
+    if len(originals) != 1:
+        raise ValueError("Manifest asli tidak dapat diidentifikasi dari provenance.")
+    original = originals[0]
+    for path in (original, augmented):
+        if not path.is_file() or hashes.get(str(path)) != file_hash(path):
+            raise ValueError(f"Manifest hilang/berubah: {path}. Pulihkan file run asli; jangan mengganti dengan manifest lain.")
+    audit = protocol.get("dataset_audit", {})
+    official_hash = "ae03fc23fed0925c254dc4c4c9e55b539bd199b236151cb649857378a43539e9"
+    if audit.get("eligible_images") != 1204 or audit.get("annotations_sha256") != official_hash:
+        raise ValueError("Provenance tidak memiliki bukti audit v2 resmi 1.204 gambar.")
+    def read_csv(path):
+        with path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            return reader.fieldnames, list(reader)
+
+    fields, original_rows = read_csv(original)
+    augmented_fields, augmented_rows = read_csv(augmented)
+    expected = {"levle0": 470, "levle1": 579, "levle2": 133, "levle3": 22}
+    if (len(original_rows) != 1204 or len({r["filename"] for r in original_rows}) != 1204
+            or Counter(r["label_name"] for r in original_rows) != expected
+            or set(fields) != set(augmented_fields)):
+        raise ValueError("Struktur/jumlah sampel manifest v2 tidak sesuai.")
+    def records(rows):
+        return Counter(tuple(r.get(k, "") for k in fields) for r in rows)
+
+    if records(original_rows) - records(augmented_rows):
+        raise ValueError("Baris asli hilang/berubah pada manifest augmented.")
+    if records([r for r in original_rows if r["split"] != "train"]) != records([r for r in augmented_rows if r["split"] != "train"]):
+        raise ValueError("Validation/test berubah pada manifest augmented.")
+    before = Counter(r["label_index"] for r in original_rows if r["split"] == "train")
+    after = Counter(r["label_index"] for r in augmented_rows if r["split"] == "train")
+    if set(before) != set("0123") or set(after) != set(before) or set(after.values()) != {max(before.values())}:
+        raise ValueError("Train augmented belum seimbang 100%.")
+    if len({r["filename"] for r in augmented_rows}) != len(augmented_rows):
+        raise ValueError("Nama sampel augmented duplikat.")
+    # Only preprocessed train/val photos must remain readable; no raw/test/mask access.
+    read_train_val_rows(augmented)
+    metrics_path = output_dir / "metrics.json"
+    if metrics_path.is_file():
+        config = json.loads(metrics_path.read_text())["config"]
+        if Path(config["manifest"]) != augmented or config["variant"] != "proposed":
+            raise ValueError("metrics.json bukan run sumber yang sama.")
+    return {"protocol": protocol, "source_record": record_path,
+            "original_manifest": original, "augmented_manifest": augmented}
+
+
 def read_train_val_rows(path):
     with Path(path).open(newline="", encoding="utf-8") as handle:
         # Test is removed before checking paths or constructing a dataset.

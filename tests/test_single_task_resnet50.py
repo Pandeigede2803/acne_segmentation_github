@@ -6,6 +6,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,8 +66,11 @@ class SingleTaskTests(unittest.TestCase):
         ast.parse(summary)
         self.assertIn("RUN_SINGLE_TASK = False", code)
         self.assertIn("isin(['train', 'val'])", code)
-        self.assertIn("v2_audit.audit_augmented_manifest", code)
-        self.assertIn("source_protocol['sha256']", code)
+        self.assertIn("st_helper.recover_source_run(ST_SOURCE_RUN)", code)
+        self.assertIn("ST_SOURCE_RUN = Path(", code)
+        self.assertNotIn("str(DEVICE)", code)
+        self.assertNotIn("SCRIPTS_DIR /", code)
+        self.assertNotIn("v2_audit.", code)
         self.assertIn("command.append('--resume')", code)
         command = next(n for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Assign)
                        and any(isinstance(t, ast.Name) and t.id == "command" for t in n.targets))
@@ -80,6 +84,76 @@ class SingleTaskTests(unittest.TestCase):
         literals = [n.value for n in ast.walk(dataset) if isinstance(n, ast.Constant)]
         for forbidden in ("mask", "mask_path", "refined_mask", "morph_target"):
             self.assertNotIn(forbidden, literals)
+
+    def make_saved_source(self, root):
+        photo = root / "preprocessed.jpg"
+        photo.touch()
+        original = root / "refined_manifest.csv"
+        augmented = root / "augmented.csv"
+        rows = []
+        for label, count in {"levle0": 470, "levle1": 579, "levle2": 133, "levle3": 22}.items():
+            for i in range(count):
+                split = "val" if i % 5 == 0 else "test" if i % 5 == 1 else "train"
+                rows.append({"filename": f"{label}_{i}.jpg", "label_name": label,
+                             "label_index": label[-1], "split": split,
+                             "image_path": "/missing/raw.jpg",
+                             "preprocessed_path": "/missing/test.jpg" if split == "test" else str(photo)})
+        def write_csv(path, data):
+            with path.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(data)
+        write_csv(original, rows)
+        counts = Counter(r["label_index"] for r in rows if r["split"] == "train")
+        additions = []
+        for label, count in counts.items():
+            sample = next(r for r in rows if r["split"] == "train" and r["label_index"] == label)
+            additions.extend(dict(sample, filename=f"synthetic_{label}_{i}.jpg")
+                             for i in range(max(counts.values()) - count))
+        write_csv(augmented, rows + additions)
+        protocol = {
+            "command": ["python", "/missing/old_trainer.py", "--manifest", str(augmented),
+                        "--variant", "proposed", "--label-distribution", "malds",
+                        "--class-weighting", "balanced", "--pretrained"],
+            "target_ratio": 1.0, "weighted_sampler": False,
+            "sha256": {str(p): TRAINER.file_hash(p) for p in (original, augmented)},
+            "dataset_audit": {"eligible_images": 1204, "annotations_sha256":
+                              "ae03fc23fed0925c254dc4c4c9e55b539bd199b236151cb649857378a43539e9"},
+        }
+        record = root / "augmentation_training_provenance.json"
+        record.write_text(json.dumps(protocol))
+        return original, augmented, record
+
+    def test_recover_after_reset_without_raw_files_or_masks(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            original, augmented, _ = self.make_saved_source(root)
+            recovered = TRAINER.recover_source_run(root)
+            self.assertEqual(recovered["original_manifest"], original)
+            self.assertEqual(recovered["augmented_manifest"], augmented)
+
+    def test_recovery_rejects_changed_manifest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, augmented, _ = self.make_saved_source(root)
+            augmented.write_text(augmented.read_text() + "\n")
+            with self.assertRaisesRegex(ValueError, "Manifest hilang/berubah"):
+                TRAINER.recover_source_run(root)
+
+    def test_recovery_rejects_unverified_dataset(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, _, record = self.make_saved_source(root)
+            data = json.loads(record.read_text())
+            data["dataset_audit"]["eligible_images"] = 1457
+            record.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, "bukti audit v2"):
+                TRAINER.recover_source_run(root)
+
+    def test_recovery_missing_run_is_actionable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(FileNotFoundError, "ST_SOURCE_RUN"):
+                TRAINER.recover_source_run(folder)
 
 
 if __name__ == "__main__":

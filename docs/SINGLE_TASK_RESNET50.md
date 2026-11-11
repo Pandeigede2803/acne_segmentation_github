@@ -31,13 +31,18 @@ train/validation, bukan mask atau foto test.
 
 ## Menjalankan
 
-1. Gunakan notebook terbaru dan pastikan sumber Step 11 serta provenance tersedia.
-2. Unggah `scripts/train_single_task_resnet50.py` ke `SCRIPTS_DIR` atau publish
-   ke GitHub sebelum cell mencoba mengunduhnya. Perubahan lokal tidak otomatis
-   memperbarui script di Drive/GitHub.
+1. Gunakan notebook terbaru. Step 29 dapat dijalankan setelah runtime reset
+   tanpa menjalankan cell Step 11 lagi: `ST_SOURCE_RUN` menunjuk folder run
+   proposed v4 di Drive. Edit satu path ini jika memakai run sumber berbeda.
+   Drive akan di-mount jika diperlukan saat training diaktifkan.
+2. Unggah `scripts/train_single_task_resnet50.py` terbaru ke path `ST_SCRIPT`
+   (default `output/single_task_scripts/train_single_task_resnet50.py` di Drive)
+   atau publish ke GitHub sebelum unduhan pertama. Script lama yang belum punya
+   helper pemulihan akan ditolak dengan pesan khusus. Perubahan lokal tidak
+   otomatis memperbarui file di Drive/GitHub.
 3. Jangan jalankan bersamaan dengan training proposed pada GPU yang sama.
 4. Aktifkan `RUN_SINGLE_TASK = True` di Step 29.
-5. Jika terputus, pulihkan variabel/sumber yang sama dan jalankan ulang.
+5. Jika terputus, gunakan `ST_SOURCE_RUN` dan `ST_BUNDLE` yang sama lalu jalankan ulang.
    Checkpoint akhir epoch otomatis di-resume; epoch terputus dapat diulang.
 6. Untuk training baru, ganti suffix `ST_BUNDLE`; jangan hapus hasil lama.
 
@@ -47,6 +52,15 @@ memakai temporary file lalu replace. Hanya muat checkpoint buatan sendiri yang
 dipercaya. Identitas manifest/script dicatat, tetapi isi piksel foto tidak di-hash.
 
 ## Hasil
+
+Pemulihan menggunakan provenance audit v2 yang telah disimpan saat Step 11.
+Manifest asli dan augmented di Drive harus tetap cocok hash-nya; keutuhan
+baris asli, validation/test yang tidak berubah, keseimbangan kelas, serta
+keberadaan foto preprocessed train/validation diperiksa ulang. File mentah,
+mask, JSON anotasi, dan trainer hybrid lama di `/content` tidak dibutuhkan oleh
+classifier ini dan tidak diunduh ulang untuk memulai training single-task.
+Identitas historisnya tetap tersimpan dalam provenance sumber; ini bukan audit
+ulang piksel/anotasi mentah. Provenance tanpa bukti audit v2 resmi ditolak.
 
 Di folder `ST_RUN`: `best_model.pt`, `last_checkpoint.pt`, `history_partial.json`,
 `metrics.json`, dan `validation_predictions.csv`. Log di `ST_BUNDLE/training.log`.
