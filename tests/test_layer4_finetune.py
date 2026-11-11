@@ -129,6 +129,11 @@ class MetricTests(unittest.TestCase):
             self.assertTrue(log_path.read_text().startswith('OLD LOG\n'))
             self.assertIn('RESUME epoch 2', log_path.read_text())
 
+    def test_legacy_trainer_constructor_fallback_is_present(self):
+        source = (ROOT / 'scripts/train_layer4_finetune.py').read_text()
+        self.assertIn('Trainer legacy terdeteksi', source)
+        self.assertIn("requested_variant != 'proposed'", source)
+
 
 @unittest.skipUnless(importlib.util.find_spec('torch'), 'PyTorch not installed')
 class TrainabilityTests(unittest.TestCase):

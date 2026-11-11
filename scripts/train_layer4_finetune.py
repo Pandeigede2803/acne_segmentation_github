@@ -133,7 +133,17 @@ def main():
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
     cfg = json.loads(a.metrics.read_text())['config']
-    model = tr.ProposalHybridResNet50(pretrained=False, variant=cfg.get('variant', 'proposed'))
+    # Colab archives may contain an older trainer whose constructor has no
+    # ``variant`` argument. The baseline checkpoint still determines the
+    # weights; fall back only for the legacy default/proposed architecture.
+    requested_variant = cfg.get('variant', 'proposed')
+    try:
+        model = tr.ProposalHybridResNet50(pretrained=False, variant=requested_variant)
+    except TypeError as error:
+        if 'unexpected keyword argument' not in str(error) or requested_variant != 'proposed':
+            raise
+        print('Trainer legacy terdeteksi: memakai constructor tanpa variant.', flush=True)
+        model = tr.ProposalHybridResNet50(pretrained=False)
     model.load_state_dict(torch.load(a.checkpoint, map_location='cpu', weights_only=True))
     # Both arms start from the SAME trained classifier and backbone, not a new random head.
     if model.classifier[2].p != 0.3:
