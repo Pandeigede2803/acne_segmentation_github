@@ -155,6 +155,59 @@ class SingleTaskTests(unittest.TestCase):
             with self.assertRaisesRegex(FileNotFoundError, "ST_SOURCE_RUN"):
                 TRAINER.recover_source_run(folder)
 
+    def make_ablation_source(self, root):
+        original, augmented, record = self.make_saved_source(root)
+        mask = root / "mask.png"
+        mask.touch()
+        for path in (original, augmented):
+            with path.open(newline="") as handle:
+                rows = list(csv.DictReader(handle))
+            for row in rows:
+                row["refined_mask"] = str(mask)
+            with path.open("w", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+                writer.writeheader()
+                writer.writerows(rows)
+        data = json.loads(record.read_text())
+        data["sha256"] = {str(p): TRAINER.file_hash(p) for p in (original, augmented)}
+        data["sha256"]["/missing/old_runtime/train_proposal_hybrid_resnet50_malds.py"] = TRAINER.file_hash(ROOT / "scripts/train_proposal_hybrid_resnet50_malds.py")
+        record.write_text(json.dumps(data))
+        config = {"manifest": str(augmented), "variant": "proposed", "pretrained": True,
+                  "class_weighting": "balanced", "weighted_sampler": False,
+                  "resolved_input_normalization": "imagenet", "phase1_epochs": 30, "phase2_epochs": 90}
+        (root / "metrics.json").write_text(json.dumps({"config": config}))
+        spec = importlib.util.spec_from_file_location("prepare_ablation_test", ROOT / "scripts/prepare_augmented_ablation.py")
+        setup = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(setup)
+        return setup, record, mask
+
+    def test_ablation_recovers_without_raw_files_or_step11_globals(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            setup, _, _ = self.make_ablation_source(root)
+            recovered = setup.prepare_source(root, ROOT / "scripts", allow_download=False)
+            self.assertEqual(recovered["config"]["phase1_epochs"], 30)
+            self.assertEqual(recovered["trainer_path"], ROOT / "scripts/train_proposal_hybrid_resnet50_malds.py")
+            self.assertEqual(recovered["augmented_manifest"], root / "augmented.csv")
+
+    def test_ablation_rejects_wrong_trainer_version(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            setup, record, _ = self.make_ablation_source(root)
+            data = json.loads(record.read_text())
+            data["sha256"]["/missing/old_runtime/train_proposal_hybrid_resnet50_malds.py"] = "wrong-hash"
+            record.write_text(json.dumps(data))
+            with self.assertRaisesRegex(ValueError, "Trainer cache berbeda"):
+                setup.prepare_source(root, ROOT / "scripts", allow_download=False)
+
+    def test_ablation_requires_stored_masks_but_not_training_again(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            setup, _, mask = self.make_ablation_source(root)
+            mask.unlink()
+            with self.assertRaisesRegex(FileNotFoundError, "Mask train/validation"):
+                setup.prepare_source(root, ROOT / "scripts", allow_download=False)
+
 
 if __name__ == "__main__":
     unittest.main()

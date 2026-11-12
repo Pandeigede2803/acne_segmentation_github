@@ -188,6 +188,10 @@ ditambahkan dari artefak run yang sama setelah tersedia.
 
 ### 7.1 Protokol perbandingan
 
+Step 20 membaca artefak run Step 11 yang telah tersimpan di Drive; training
+utama tidak dijalankan ulang. Setelah runtime reset, path sumber, manifest,
+konfigurasi, serta versi trainer dipulihkan dan diverifikasi sebelum ablation.
+
 - Mengambil hanya train/validation dari manifest augmented Step 11.
 - Menggunakan class weighting balanced, tanpa weighted sampler, dan konfigurasi
   input, batch, epoch, seed, serta sumber trainer yang sesuai Step 11.

@@ -268,3 +268,21 @@ train_acc=0.9660 val_acc=0.7135 val_kappa=0.4812 val_loss=0.7566 best_epoch=77
 Epoch 120/120 | phase2_unfreeze
 train_acc=0.9648 val_acc=0.6798 val_kappa=0.4197 val_loss=0.8092 best_epoch=77
 Selesai. Hasil hanya validation; Dice/IoU tidak berlaku untuk single-task klasifikasi.
+
+
+
+model	split	jumlah_test	test_accuracy	test_kappa
+0	ResNet50 single-task	test	184	0.690217	0.456186
+1	Proposed augmented	test	184	0.711957	0.513834
+
+class	precision	recall	f1	support
+0	0	0.814815	0.619718	0.704000	71
+1	1	0.641667	0.875000	0.740385	88
+2	2	0.625000	0.238095	0.344828	21
+3	3	0.500000	0.250000	0.333333	4
+Checkpoint single-task terkunci pada epoch: 77
+Jumlah test yang sama dengan proposed: 184
+Macro-F1 TEST single-task: 0.5306363837312114
+Confusion matrix TEST: [[44, 27, 0, 0], [10, 77, 1, 0], [0, 15, 5, 1], [0, 1, 2, 1]]
+Dice/IoU single-task: tidak berlaku. Semua angka di tabel perbandingan adalah TEST, bukan validation.
+Hasil tersimpan: /content/drive/MyDrive/acne_project/output/training_runs/2026-11-11_acne04v2_official1204_proposed_offline_aug100_balanced_v4_single_task_v1/test_evaluation_v1

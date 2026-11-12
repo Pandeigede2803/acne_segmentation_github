@@ -56,16 +56,18 @@ class AugmentationNotebookTests(unittest.TestCase):
 
     def test_default_off_and_provenance_guards(self):
         self.assertIn("RUN_ABLATIONS = False", self.ablation)
-        self.assertIn("step11_protocol['sha256'] != current_hashes", self.ablation)
+        self.assertIn("setup_helper.prepare_source(ABLATION_SOURCE_RUN, ablation_scripts)", self.ablation)
         self.assertIn("json.loads(protocol_path.read_text()) != ablation_protocol",
                       self.ablation)
         self.assertIn("ABLATION_MANIFEST.read_text() != manifest_text", self.ablation)
 
     def test_v2_checks_before_training(self):
         self.assertIn("v2_audit.audit_manifest", self.training)
-        self.assertIn("v2_audit.audit_manifest", self.ablation)
+        self.assertIn("setup_helper.prepare_source", self.ablation)
         self.assertIn("v2_audit.audit_augmented_manifest", self.training)
-        self.assertIn("v2_audit.audit_augmented_manifest", self.ablation)
+        self.assertNotIn("v2_audit.", self.ablation)
+        self.assertNotIn("globals().get('OFFLINE_AUGMENT'", self.ablation)
+        self.assertIn("ABLATION_SOURCE_RUN = Path(", self.ablation)
         self.assertIn("acne04v2_official1204", self.training)
 
     def test_preprocessing_and_annotation_cells(self):
