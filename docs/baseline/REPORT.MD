@@ -259,7 +259,7 @@ validation loss minimum masing-masing varian.
 **Pembahasan hasil:**
 
 
-## 8. Pembanding single-task — Step 29
+## 8. Pembanding single-task — Step 29 dan evaluasi test Step 30
 
 ResNet-50 pretrained digunakan untuk klasifikasi severity saja, tanpa decoder,
 Spatial Attention, AMFM, MA-LDS, mask input, dan loss segmentasi/morfologi.
@@ -269,7 +269,9 @@ lebar cabang global proposed. Ini bukan varian `baseline` multi-task pada ablati
 Pembanding memakai train/validation dari manifest augmented yang sama, ImageNet
 normalization, augmentasi online, class weighting balanced, tanpa weighted sampler,
 seed dan anggaran dua fase yang sama dengan Step 11. Bobot awal berasal dari
-ImageNet, bukan checkpoint proposed. Test tidak dievaluasi. Dice/IoU tidak berlaku
+ImageNet, bukan checkpoint proposed. Step 29 hanya mengevaluasi validation;
+**Step 30 mengevaluasi checkpoint terpilih pada test yang sama dengan proposed,
+tanpa training ulang atau pemilihan ulang epoch berdasarkan test**. Dice/IoU tidak berlaku
 karena model tidak menghasilkan mask.
 
 Checkpoint dipilih dengan validation CE berbobot terendah. Proposed dipilih
@@ -278,6 +280,16 @@ sistem keseluruhan, bukan mengisolasi kontribusi segmentasi saja; ablation tetap
 diperlukan. Kesamaan seed tidak menjamin inisialisasi head atau hasil bit-identik.
 
 | Model | Epoch terbaik | Val. accuracy | Val. Kappa | Val. Macro-F1 |
+|---|---:|---:|---:|---:|
+| ResNet-50 single-task | | | | |
+| Proposed augmented | | | | |
+
+Perbandingan akhir pada test dilaporkan terpisah dari validation. Jumlah sampel
+diambil dari manifest dan audit yang sama untuk kedua model; hasil test tidak
+dibandingkan dengan angka validation. Model single-task dikunci berdasarkan
+validation CE minimum sebelum test dijalankan.
+
+| Model | Jumlah test | Test accuracy | Test Kappa | Test Macro-F1 |
 |---|---:|---:|---:|---:|
 | ResNet-50 single-task | | | | |
 | Proposed augmented | | | | |

@@ -25,6 +25,9 @@ train/validation, bukan mask atau foto test.
   total multi-task validation loss; jangan membandingkan nilai kedua loss secara
   langsung atau mengklaim perbandingan ini mengisolasi efek segmentasi saja.
 - Tidak memakai checkpoint proposed. Pretrained encoder berasal dari ImageNet.
+- Step 29 hanya memilih checkpoint memakai validation. **Evaluasi akhir test
+  disediakan terpisah pada Step 30**, menggunakan test dari manifest proposed
+  yang sama, bukan validation 178 gambar. Run v4 memiliki 184 gambar test.
 - Satu seed dan anggaran epoch sama tidak menjamin hasil bit-identik atau
   signifikansi statistik. Backbone tanpa decoder lebih ringan, tetapi durasi
   training harus diukur, bukan diasumsikan.
@@ -70,3 +73,36 @@ dan confusion matrix validation. **Dice/IoU tidak berlaku**, bukan nol.
 Cell ringkasan membandingkan validation single-task dengan validation checkpoint
 terbaik Step 11 bila tersedia. Tidak melakukan training atau evaluasi test.
 Tabel laporan tetap kosong sampai hasil run baru tersedia.
+
+## Evaluasi akhir TEST — Step 30 (tanpa training ulang)
+
+Jalankan langsung Step 30 setelah single-task selesai. Tidak perlu menjalankan
+Step 11 atau cell training Step 29 lagi, termasuk setelah runtime reset.
+Path proposed v4 dan folder single-task v1 sudah disediakan pada cell; sesuaikan
+hanya jika run sumber berbeda. `RUN_SINGLE_TASK_TEST=True` menjalankan evaluasi,
+bukan training. Sediakan `scripts/evaluate_single_task_test.py` terbaru pada
+`output/evaluation_scripts/evaluate_single_task_test.py` di Drive, atau publish
+ke GitHub sebelum cell mencoba mengunduhnya.
+
+Checkpoint single-task dikunci berdasarkan validation CE minimum (epoch 77 pada
+hasil yang tersedia). Bobot `best_model.pt` harus sama dengan `best_state` dalam
+`last_checkpoint.pt`. Tidak memilih ulang epoch berdasarkan hasil test. Model
+dibangun tanpa download pretrained baru dan hanya dijalankan dalam eval mode
+dengan `torch.inference_mode()`, tanpa optimizer, gradien, atau augmentasi.
+
+Test berasal dari manifest yang tercatat dalam `metrics.json` proposed, diverifikasi
+hash dan jumlah sampelnya. Provenance juga memastikan single-task dan proposed
+memakai train/validation augmented yang sama. Foto preprocessed test harus masih
+tersedia di Drive. Tidak perlu mask untuk classifier ini.
+
+Hasil disimpan terpisah di folder `single_task_v1/test_evaluation_v1`:
+
+- `metrics.json`: test accuracy, Kappa, Macro-F1, balanced accuracy, laporan kelas.
+- `test_predictions.csv`: prediksi setiap gambar test.
+- `test_comparison.csv`: accuracy/Kappa **test vs test**, termasuk proposed.
+- `test_confusion_matrix.png`: visualisasi confusion matrix dari cell notebook.
+- `test_evaluation_provenance.json`: identitas sumber/checkpoint yang dikunci.
+
+Hasil training/validation asli tidak diubah. Output dengan provenance sama dibaca
+kembali; sumber berbeda memerlukan folder baru. Dice/IoU single-task tidak berlaku.
+Jangan memakai hasil test untuk tuning atau memilih checkpoint baru.
