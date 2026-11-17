@@ -37,3 +37,20 @@ training Step 11 hanya untuk menghilangkan error** atau melewati pemeriksaan.
 
 Cache/provenance ablation yang sudah sesuai dipertahankan. Perubahan input,
 konfigurasi, atau versi trainer tidak boleh dimasukkan ke checkpoint yang sama.
+
+## Evaluasi hasil — Step 20a
+
+Setelah ketujuh varian selesai (termasuk `proposed` kontrol ablation), jalankan
+cell **Step 20a** pada notebook. Bisa dilakukan setelah runtime reset tanpa
+mengulang training: sesuaikan `EVAL_ABLATION_DIR` dengan folder Step 20 di Drive.
+Sediakan `evaluate_ablation_validation.py` terbaru di `output/evaluation_scripts`
+atau publish sebelum unduhan pertama. Cell menolak run yang belum lengkap,
+manifest yang berubah, dan metrik test. Output CSV serta grafik ditulis ke
+`<ABLATION_DIR>/validation_evaluation/`; checkpoint training tidak diubah.
+
+Pemilihan checkpoint tiap varian berdasarkan **validation loss minimum**.
+Tabel membandingkan accuracy, Kappa, Dice, dan IoU dengan kontrol `proposed`
+yang dilatih di folder ablation yang sama, bukan run Step 11. Delta accuracy
+dalam poin persentase. Seluruh angka adalah **validation**, bukan test; satu
+seed belum membuktikan signifikansi statistik. Loss antar-objektif berbeda
+tidak boleh dijadikan dasar pemeringkatan varian.

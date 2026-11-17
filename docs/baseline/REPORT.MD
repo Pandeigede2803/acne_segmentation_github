@@ -2,11 +2,10 @@
 
 **Fokus: Proposed Hybrid Multi-Task dengan Augmentasi Offline 100% dan Ablation Study**
 
-> Dokumen ini hanya membahas training proposed augmented pada Step 11 dan
-> ablation augmented pada Step 20, serta pembanding single-task pada Step 29
-> di `acne_colab.ipynb`. Semua tabel hasil
-> sengaja dikosongkan sampai artefak eksperimen tersebut tersedia dan diperiksa.
-> Sel kosong bukan nilai nol. Dokumen ini tidak menyatakan training sudah selesai.
+> Dokumen ini membahas proposed augmented Step 11, ablation Step 20, dan
+> single-task Step 29–30. Sumber ablation lokal adalah ringkasan epoch terbaik
+> dan transkripsi Colab di `docs/final-result/`; tujuh `metrics.json` lengkap,
+> checkpoint, serta provenance Drive belum tersedia lokal untuk audit independen.
 
 ## 1. Rumusan masalah
 
@@ -16,7 +15,7 @@
 
 ## 2. Tujuan penelitian
 
-Tujuan berikut mengacu pada proposal; ketercapaiannya akan dibahas setelah hasil tersedia.
+Tujuan berikut mengacu pada proposal; ketercapaiannya dibahas di bagian 9.
 
 1. Mengembangkan kerangka kerja hibrida Deep Learning yang mampu melakukan segmentasi lesi jerawat secara presisi (mengenali tipe dan lokasi lesi) sekaligus mengklasifikasikan tingkat keparahan berdasarkan kriteria Hayashi secara otomatis.
 2. Mengeksplorasi dan mengoptimalkan mekanisme Deep Representation Learning yang memanfaatkan fitur representasi dari cabang segmentasi untuk memperkuat cabang klasifikasi global dalam arsitektur multi-task learning.
@@ -51,8 +50,8 @@ perhitungan ulang jumlah lesi dari anotasi v2**.
 
 Folder sumber boleh berisi lebih banyak file, misalnya 1.457 gambar. File di luar
 daftar JSON v2 tidak dimasukkan ke manifest. Hitungan file folder tidak boleh
-dilaporkan sebagai jumlah sampel penelitian v2. Jumlah tiap split pada tabel
-berikut tetap harus diisi dari manifest aktual setelah audit, bukan perkiraan.
+dilaporkan sebagai jumlah sampel penelitian v2. Jumlah asli per kelas belum
+tersedia dalam artefak lokal; jangan diestimasi dari proporsi dataset.
 
 Notebook memverifikasi anotasi dengan commit resmi
 `5930801fc75fb1a7084c26c1db3095d3e42d1f55` dan SHA-256
@@ -67,11 +66,15 @@ Periksa duplikasi dan kebocoran subjek/sumber antar-split.
 
 | Kelas | Train asli | Train setelah augmentasi 100% | Validation asli | Test asli |
 |---|---:|---:|---:|---:|
-| Level 0 / mild | | | | |
-| Level 1 / moderate | | | | |
-| Level 2 / severe | | | | |
-| Level 3 / very severe | | | | |
-| **Total** | | | | |
+| Level 0 / mild | — | 405 | — | 71 |
+| Level 1 / moderate | — | 405 | — | 88 |
+| Level 2 / severe | — | 405 | — | 21 |
+| Level 3 / very severe | — | 405 | — | 4 |
+| **Total** | **842¹** | **1.620** | **178** | **184** |
+
+¹ 1.204 − 178 − 184, dengan asumsi split mencakup semua citra unik; per kelas
+train asli/validasi perlu manifest untuk diverifikasi. Jumlah augmented dari
+konfigurasi proposed; test dari CSV prediksi. Tanda — bukan nol.
 
 ## 5. Preprocessing dan augmentasi offline 100%
 
@@ -124,8 +127,7 @@ morphology consistency MSE.
 
 ### 6.2 Konfigurasi yang ditetapkan
 
-Tabel ini adalah protokol, bukan hasil. Cocokkan kembali dengan konfigurasi
-tersimpan saat mengisi hasil final.
+Konfigurasi proposed dicocokkan dengan `docs/result-24-nov/metrics_v4.json`.
 
 | Parameter | Konfigurasi |
 |---|---|
@@ -150,14 +152,14 @@ yang sama dengan sumber dan konfigurasi tetap. Identitas sumber dicatat dalam
 
 | Informasi | Isian |
 |---|---|
-| Run ID / folder output | |
-| Tanggal training | |
-| Manifest dan SHA-256 | |
-| Trainer dan SHA-256 | |
-| Perangkat dan versi pustaka | |
-| Status selesai | |
-| Epoch checkpoint terbaik | |
-| Lokasi `metrics.json` dan checkpoint | |
+| Run ID / folder output | `2026-11-11_acne04v2_official1204_proposed_offline_aug100_balanced_v4` |
+| Tanggal training | Tidak diverifikasi (tanggal dalam ID bukan bukti waktu eksekusi) |
+| Manifest dan SHA-256 | `refined_manifest_offline_augmented_100pct.csv`; hash tidak tersedia lokal |
+| Trainer dan SHA-256 | Hash tidak tersedia lokal |
+| Perangkat dan versi pustaka | `cuda` menurut konfigurasi; versi pustaka tidak tersedia lokal |
+| Status selesai | History 120 epoch dan metrik test tersedia |
+| Epoch checkpoint terbaik | **112** (minimum validation loss) |
+| Lokasi `metrics.json` dan checkpoint | Salinan metrik: `docs/result-24-nov/metrics_v4.json`; checkpoint Drive belum diaudit lokal |
 
 ### 6.4 Hasil utama
 
@@ -166,23 +168,26 @@ dari evaluasi checkpoint tersebut, bukan dari epoch terakhir secara otomatis.
 
 | Evaluasi | Epoch terbaik | Accuracy | Kappa | Dice | IoU | Total loss |
 |---|---:|---:|---:|---:|---:|---:|
-| Train | | | | | | |
-| Validation | | | | | | |
-| Test | | | | | | |
+| Train | 112 | 89,14% | 0,8551 | 0,5606 | 0,4196 | 0,6926 |
+| Validation | 112 | 75,84% | 0,5838 | 0,3715 | 0,2597 | 1,0694 |
+| Test | 112 | 71,20% | 0,5138 | 0,3402 | 0,2358 | 1,1853 |
 
 ### 6.5 Hasil klasifikasi per kelas pada test
 
 | Kelas | Precision | Recall | F1-score | Support |
 |---|---:|---:|---:|---:|
-| Level 0 | | | | |
-| Level 1 | | | | |
-| Level 2 | | | | |
-| Level 3 | | | | |
-| Macro average | | | | |
-| Weighted average | | | | |
+| Level 0 | 0,7576 | 0,7042 | 0,7299 | 71 |
+| Level 1 | 0,6970 | 0,7841 | 0,7380 | 88 |
+| Level 2 | 0,6316 | 0,5714 | 0,6000 | 21 |
+| Level 3 | 0,0000 | 0,0000 | 0,0000 | 4 |
+| Macro average | 0,5218 | 0,5149 | 0,5170 | 184 |
+| Weighted average | 0,6908 | 0,7120 | 0,6966 | 184 |
 
-Confusion matrix, visualisasi target vs prediksi mask, dan kurva training akan
-ditambahkan dari artefak run yang sama setelah tersedia.
+Metrik per kelas dan rata-rata dihitung dari 184 baris
+`docs/result-24-nov/testing_predictions_v4_fixed.csv`, bukan dari field
+`metrics_v4.json`. Confusion matrix test (baris aktual, kolom prediksi 0–3):
+`[[50,21,0,0],[16,69,3,0],[0,9,12,0],[0,0,4,0]]`; 131/184 benar.
+Path visualisasi mask tersedia dalam CSV, tetapi berkas gambar tidak ada lokal.
 
 ## 7. Ablation study augmented — Step 20
 
