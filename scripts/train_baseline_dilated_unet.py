@@ -1064,6 +1064,7 @@ def main() -> None:
         "config": {
             "image_dir": str(args.image_dir),
             "annotations_json": str(args.annotations_json),
+            "manifest_used": None,  # trainer ini membagi split dari sumber, tanpa manifest
             "image_size": args.image_size,
             "batch_size": args.batch_size,
             "epochs": args.epochs,

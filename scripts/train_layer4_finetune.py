@@ -171,6 +171,7 @@ def main():
     optimizer = torch.optim.AdamW(groups, weight_decay=1e-4)
     config = {k: str(v.resolve()) if isinstance(v, Path) else v for k, v in vars(a).items()}
     config.update(skip_test=True, smote=False, augmentation=False, class_weighting='none',
+                  manifest_used=str(a.manifest.resolve()),
                   dropout=0.3, selection_metric='val_loss (unweighted classification CE)',
                   image_size=cfg['image_size'], variant=model.variant,
                   resolved_input_normalization=ds_args.resolved_input_normalization,

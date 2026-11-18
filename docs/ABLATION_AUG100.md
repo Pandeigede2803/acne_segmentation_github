@@ -20,7 +20,8 @@ preprocessed, dan mask train/validation.
 Notebook memulihkan ukuran input, batch, epoch, learning rate, seed, bobot loss,
 dan augmentasi online dari konfigurasi Step 11. Class weighting balanced, tanpa
 weighted sampler; train/validation dari manifest augmented yang sama. Test tidak
-dievaluasi. Enam varian dan proposed kontrol merupakan training ablation terpisah,
+dievaluasi saat training; evaluasi test terpisah tersedia di Step 20b.
+Enam varian dan proposed kontrol merupakan training ablation terpisah,
 bukan pemanggilan ulang training utama Step 11.
 
 ## Setelah file /content hilang
@@ -54,3 +55,15 @@ yang dilatih di folder ablation yang sama, bukan run Step 11. Delta accuracy
 dalam poin persentase. Seluruh angka adalah **validation**, bukan test; satu
 seed belum membuktikan signifikansi statistik. Loss antar-objektif berbeda
 tidak boleh dijadikan dasar pemeringkatan varian.
+
+## Evaluasi hasil — Step 20b (test)
+
+Jalankan cell **Step 20b** setelah Step 20a. Cell memakai tujuh checkpoint
+`best_model.pt` yang sama dan satu manifest
+`refined_manifest_offline_augmented_100pct.csv` (split test 184 citra).
+Manifest wajib memiliki SHA-256 identik dengan manifest aug100 pada provenance
+sumber Step 11; manifest lain ditolak. Threshold segmentasi 0,5, tanpa tuning.
+Output `ablation_test_results.csv` berisi kolom `variant, acc, kappa, macro_f1,
+dice, iou`, ditulis di folder ablation. Angka ini adalah test run ablation;
+jangan mencampurnya dengan test run utama Step 11 dalam satu tabel. Bila
+keduanya dibandingkan, cantumkan label run di tabel.

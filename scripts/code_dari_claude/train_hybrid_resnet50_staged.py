@@ -691,6 +691,7 @@ def main() -> None:
     summary = {
         "config": {
             "manifest": str(args.manifest),
+            "manifest_used": str(args.manifest),
             "batch_size": args.batch_size,
             "epochs": args.epochs_phase1 + args.epochs_phase2,
             "epochs_phase1": args.epochs_phase1,

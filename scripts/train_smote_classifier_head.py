@@ -114,7 +114,8 @@ def main():
                          nn.Linear(a.hidden_dim, 4)).to(a.device)
     run_config = {'seed': a.seed, 'epochs': a.epochs, 'batch_size': a.batch_size,
                   'dropout': a.dropout, 'hidden_dim': a.hidden_dim, 'skip_test': a.skip_test,
-                  'manifest': str(a.manifest.resolve()), 'checkpoint': str(a.checkpoint.resolve()),
+                  'manifest': str(a.manifest.resolve()), 'manifest_used': str(a.manifest.resolve()),
+                  'checkpoint': str(a.checkpoint.resolve()),
                   'baseline_metrics': str(a.metrics.resolve())}
     head_config = {'hidden_dim': a.hidden_dim, 'dropout': a.dropout}
     opt = torch.optim.AdamW(head.parameters(), lr=1e-3, weight_decay=1e-4)

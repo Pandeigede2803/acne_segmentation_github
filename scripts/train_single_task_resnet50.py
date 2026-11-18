@@ -160,6 +160,7 @@ def main():
     config.update({"variant": "resnet50_single_task", "classification_loss": "class_weighted_ce",
                    "input_normalization": "imagenet", "weighted_sampler": False,
                    "class_weighting": "balanced", "test_evaluated": False,
+                   "manifest_used": str(args.manifest),
                    "manifest_sha256": file_hash(args.manifest), "script_sha256": file_hash(__file__)})
     args.output_dir.mkdir(parents=True, exist_ok=True)
     protocol_path = args.output_dir / "protocol.json"

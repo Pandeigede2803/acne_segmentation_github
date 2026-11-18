@@ -11,6 +11,7 @@ Seluruh nilai dibaca langsung dari `metrics.json` masing-masing run dan
 | T1 | Proposed utama (Step 11 v4) | `2026-11-11_acne04v2_official1204_proposed_offline_aug100_balanced_v4/metrics.json` | validasi + test |
 | T2 | Ablation study, 7 varian | `..._balanced_v4_ablation_aug100_v1/<varian>/metrics.json` | validasi saja |
 | T2a | Ringkasan ablation | `..._ablation_aug100_v1/ablation_results.csv` | validasi saja |
+| T2b | Evaluasi test ablation (Step 20b) | `..._ablation_aug100_v1/ablation_test_results.csv` | test |
 | T3 | Single-task ResNet-50 | `..._balanced_v4_single_task_v1/run/metrics.json` | validasi + test |
 | T3a | Evaluasi test single-task | `..._single_task_v1/test_evaluation_v1/metrics.json` | test |
 
@@ -32,8 +33,9 @@ Protokol yang berlaku pada ketiga rangkaian training:
 | Split | stratified 70/15/15, seed 42 |
 
 Jumlah data per himpunan pada rangkaian ablation: train 1.620 baris,
-validasi 178 citra, test 0 (tidak dievaluasi). Test set hanya dievaluasi
-pada T1 dan T3, masing-masing satu kali setelah checkpoint dikunci.
+validasi 178 citra, test 0 (tidak dievaluasi saat training). Evaluasi test
+T2b memakai split test 184 citra dari manifest aug100 yang sama. Test set juga
+dievaluasi pada T1 dan T3, masing-masing satu kali setelah checkpoint dikunci.
 
 ## 2. Training 1 - Proposed utama (T1)
 
@@ -74,7 +76,9 @@ maupun confusion matrix. Nilai tersebut tidak dihitung ulang di sini.
 ## 3. Training 2 - Ablation study (T2)
 
 Tujuh varian dilatih dengan manifest, protokol, seed, dan kriteria checkpoint
-yang sama. Tidak ada varian yang mengevaluasi test set.
+yang sama. Saat training tidak ada varian yang mengevaluasi test set.
+Evaluasi test terpisah dijalankan satu kali lewat Step 20b (T2b), memakai
+checkpoint terbaik yang sama dan threshold segmentasi 0,5 tanpa tuning.
 
 ### 3.1 Komponen yang diubah per varian
 
@@ -220,25 +224,26 @@ keluaran segmentasi. Nilainya `null` pada `metrics.json`.
 
 Kedua model dievaluasi pada himpunan test yang sama, 184 citra.
 
-| Model | Accuracy | Cohen's kappa | Dice | IoU | Macro F1 | Balanced accuracy |
-|---|---:|---:|---:|---:|---:|---:|
-| Proposed multi-task (T1) | 71.20% | 0.5138 | 0.3402 | 0.2358 | tidak dicatat | tidak dicatat |
-| ResNet-50 single-task (T3) | 69.02% | 0.4562 | tidak berlaku | tidak berlaku | 0.5306 | 49.57% |
-| **Selisih (T1 - T3)** | **+2.17 pp** | **+0.0576** | | | | |
+| Model | Run | Accuracy | Cohen's kappa | Dice | IoU | Macro F1 | Balanced accuracy |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Proposed multi-task (T1) | `..._proposed_offline_aug100_balanced_v4` | 71.20% | 0.5138 | 0.3402 | 0.2358 | tidak dicatat | tidak dicatat |
+| ResNet-50 single-task (T3) | `..._single_task_v1/run` | 69.02% | 0.4562 | tidak berlaku | tidak berlaku | 0.5306 | 49.57% |
+| **Selisih (T1 - T3)** | dua run terpisah | **+2.17 pp** | **+0.0576** | | | | |
 
 Nilai `correct` pada T1 tidak tersedia di `test_metrics`; persentase dihitung
 dari field `acc` yang dilaporkan run, bukan dari confusion matrix.
 
 Perbandingan validation antara proposed pada T1 dan varian `proposed` pada T2:
 
-| Model | val_loss | val_acc | val_kappa | val_dice | val_iou |
-|---|---:|---:|---:|---:|---:|
-| T1 proposed (epoch 112) | 1.0694 | 75.84% | 0.5838 | 0.3715 | 0.2597 |
-| T2 `proposed` (epoch 112) | 1.0649 | 78.65% | 0.6332 | 0.3665 | 0.2552 |
+| Model | Run | val_loss | val_acc | val_kappa | val_dice | val_iou |
+|---|---|---:|---:|---:|---:|---:|
+| T1 proposed (epoch 112) | `..._proposed_offline_aug100_balanced_v4` | 1.0694 | 75.84% | 0.5838 | 0.3715 | 0.2597 |
+| T2 `proposed` (epoch 112) | `..._balanced_v4_ablation_aug100_v1/proposed` | 1.0649 | 78.65% | 0.6332 | 0.3665 | 0.2552 |
 
 Kedua run memakai seed, hyperparameter, augmentasi, dan kriteria checkpoint
 yang sama, tetapi merupakan dua proses pelatihan terpisah sehingga angka
-validasi keduanya tidak identik.
+validasi keduanya tidak identik. Label run wajib disertakan; angka T1 dan T2
+tidak boleh dicampur atau dirata-ratakan dalam satu sel.
 
 ## 6. Chart dan alur pembuatannya
 
@@ -298,7 +303,7 @@ Aturan pemakaian angka:
 
 | No | Catatan |
 |---|---|
-| 1 | Seluruh tabel ablation berasal dari set validasi. Tidak ada angka test untuk 7 varian. |
+| 1 | Tabel T2/T2a berasal dari set validasi. Angka test tujuh varian (T2b) dicatat terpisah dan tidak dicampur dengan test T1/T3 dalam tabel yang sama. |
 | 2 | Satu seed per varian. Selisih kappa di bawah 0,06 tidak diuji signifikansinya. |
 | 3 | `no_amfm` mengubah ukuran kanal masukan classifier dari 128 menjadi 256, sehingga penurunannya tidak murni berasal dari hilangnya AMFM. |
 | 4 | `proposed` pada T1 dan T2 adalah dua proses pelatihan terpisah dengan angka validasi berbeda. |

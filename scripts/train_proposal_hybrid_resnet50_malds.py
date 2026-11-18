@@ -694,6 +694,7 @@ def main() -> None:
         "config": {
             **vars(args),
             "manifest": str(args.manifest),
+            "manifest_used": str(args.manifest),
             "output_dir": str(args.output_dir),
             "device": str(device),
             "encoder": "resnet50",
