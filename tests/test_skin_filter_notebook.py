@@ -33,6 +33,11 @@ class SkinFilterNotebookTests(unittest.TestCase):
         self.assertIn("Jalankan Step 31 dulu", self.code)
         self.assertIn("experiments_512_skin", self.code)
 
+    def test_service_account_downloads_step31_and_syncs_skin_output(self):
+        self.assertIn("DRIVE_ACCESS_MODE == 'service_account'", self.code)
+        self.assertIn("download_folder(DRIVE_API, remote_raw_id", self.code)
+        self.assertIn("upload_folder(DRIVE_API, SKIN_FILTER_BASE", self.code)
+
     def test_filter_options_and_provenance(self):
         self.assertIn("SKIN_FILTER_FILL", self.code)
         self.assertIn("SKIN_FILTER_CLIP_MASKS", self.code)

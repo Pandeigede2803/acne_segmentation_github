@@ -66,3 +66,28 @@ terburuk.
 
 Audit ini tidak mengubah manifest, checkpoint, atau hasil training, dan tidak
 membuka test untuk pemilihan model.
+
+
+## Mode tanpa OAuth (folder publik)
+
+Folder publik `1Wx3jxA0RRsLnPkbhmt_Na8jRCrjYHDaA` berisi output/scripts, bukan
+dataset mentah. Folder ini bisa **diunduh read-only** dengan `gdown`; tidak bisa
+di-mount read-write tanpa OAuth.
+
+Step 32 mendukung mode ini:
+
+```python
+DRIVE_ACCESS_MODE = 'service_account'  # Step 2; perlu JSON key di Colab Secrets
+USE_PUBLIC_MANIFEST = True   # Step 32
+FACE_AUDIT_IMAGE_DIR = DETECTED_IMAGE_DIR
+FACE_AUDIT_ANNOTATIONS = DETECTED_ANNOT_JSON
+```
+
+Cell mengunduh `refined_manifest.csv` dari folder publik memakai file ID
+`1hwaX9eK2ueH55X9YyWtxOZnTqbxTAjuK` dan menulis hasil ke
+`/content/public_output/face_audit_v1` pada mode lokal, lalu mengunggah hasil ke
+folder Drive `face_audit_v1` bila service-account mode aktif. Foto asli + JSON
+anotasi tetap berasal dari Step 5/6 (juga tanpa OAuth).
+
+Untuk training/checkpoint, output tetap perlu penyimpanan persisten: mount
+Drive sekali per sesi, atau simpan ke `/content` lalu unduh hasilnya.

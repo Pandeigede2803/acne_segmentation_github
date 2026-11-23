@@ -12,7 +12,8 @@ NOTEBOOK = Path(__file__).resolve().parents[1] / "acne_colab.ipynb"
 class FaceAuditNotebookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+        cls.nb = json.loads(NOTEBOOK.read_text(encoding="utf-8"))
+        cells = cls.nb["cells"]
         index = next(i for i, cell in enumerate(cells)
                      if cell["cell_type"] == "markdown"
                      and "## 32." in "".join(cell["source"]))
@@ -41,6 +42,20 @@ class FaceAuditNotebookTests(unittest.TestCase):
         self.assertIn("--detect-max-size", self.code)
         self.assertIn("--checkpoint-every", self.code)
         self.assertIn("Checkpoint parsial", self.markdown)
+
+    def test_public_manifest_without_oauth(self):
+        self.assertIn("USE_PUBLIC_MANIFEST = True", self.code)
+        self.assertIn("PUBLIC_MANIFEST_ID", self.code)
+        self.assertIn("gdown.download", self.code)
+        self.assertIn("LOCAL_OUTPUT_ROOT", self.code)
+        self.assertIn("Mode tanpa OAuth", self.markdown)
+
+    def test_service_account_drive_api_mode(self):
+        setup = ''.join(self.nb['cells'][4]['source'])
+        self.assertIn("DRIVE_ACCESS_MODE = 'mount'", setup)
+        self.assertIn("GDRIVE_SERVICE_ACCOUNT_JSON", setup)
+        self.assertIn("baliweb-gsc@concrete-crow-424203-p0.iam.gserviceaccount.com", setup)
+        self.assertIn("upload_folder(DRIVE_API, FACE_AUDIT_OUTPUT", self.code)
 
     def test_uses_original_manifest_and_no_training(self):
         self.assertIn("recover_source_run", self.code)

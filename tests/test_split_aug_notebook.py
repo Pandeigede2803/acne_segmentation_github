@@ -57,6 +57,11 @@ class SplitAugNotebookTests(unittest.TestCase):
         self.assertIn("is_relative_to", self.prep_code)
         self.assertIn("split_aug_preparation.csv", self.prep_code)
 
+    def test_service_account_stages_and_syncs_files(self):
+        self.assertIn("DRIVE_ACCESS_MODE == 'service_account'", self.prep_code)
+        self.assertIn("download_folder(DRIVE_API, source_id", self.prep_code)
+        self.assertIn("upload_folder(DRIVE_API, SPLIT_AUG_BASE", self.prep_code)
+
     def test_step_31b_trains_only_prepared_data(self):
         self.assertIn("RUN_SPLIT_AUG_TRAINING = False", self.train_code)
         self.assertIn("TRAINING_VARIANT = 'raw'", self.train_code)
