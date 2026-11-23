@@ -5,14 +5,18 @@ Ringkasan implementasi dari `improvement.md`. Semua training memakai protokol
 
 ## Protokol
 
-| Setup | Train | Test | Train setelah augmentasi |
-|---|---:|---:|---:|
-| 60/40 | 721 | 483 | 4.000 (1.000/kelas) |
-| 70/30 | 842 | 362 | 4.000 (1.000/kelas) |
+| Setup | Train | Test | Train setelah augmentasi | Input |
+|---|---:|---:|---:|---:|
+| 60/40 | 721 | 483 | 4.000 (1.000/kelas) | 512×512 |
+| 70/30 | 842 | 362 | 4.000 (1.000/kelas) | 512×512 |
 
 - Split stratified dari **1.204 citra asli**, seed 42, tanpa baris `val`.
+- Preprocessing dibangun ulang pada **512×512** (letterbox, warna asli,
+  `--preprocessing-mode none`) sebelum split. Tanpa ini, training 512 hanya
+  meng-upscale citra 320 dan bukan eksperimen 512 yang sah.
 - Hanya baris `train` yang diaugmentasi; baris `test` disalin tanpa perubahan.
 - Target per kelas diatur `AUG_PER_CLASS_TARGET` (1000–2000).
+- Batch size 8 untuk 512.
 - Checkpoint: `last_checkpoint.pt` tiap epoch; `best_model.pt` = epoch akhir
   karena tidak ada validation untuk memilih checkpoint.
 - Test dievaluasi sekali setelah checkpoint akhir tersimpan.
@@ -28,7 +32,12 @@ Ringkasan implementasi dari `improvement.md`. Semua training memakai protokol
 ## Output per setup
 
 ```text
-<source_run>_split_aug1000_v1/
+output/experiments_512/split_aug1000_img512_v1/
+├── preprocess_512/
+│   ├── refined_manifest.csv
+│   ├── preprocessed_images/
+│   ├── refined_masks/
+│   └── preprocess_provenance.json
 ├── split_60_40/
 │   ├── manifest_split.csv
 │   ├── manifest_aug.csv
@@ -38,6 +47,10 @@ Ringkasan implementasi dari `improvement.md`. Semua training memakai protokol
 ├── split_70_30/...
 └── split_aug_results.csv
 ```
+
+Run lama hanya dibaca sebagai sumber. Semua output 512 ditulis ke root baru
+`output/experiments_512/`; cell menolak output yang berada di dalam folder run
+lama.
 
 ## Menjalankan
 

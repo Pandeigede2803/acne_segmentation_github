@@ -27,6 +27,20 @@ class SplitAugNotebookTests(unittest.TestCase):
         self.assertIn("'70_30': 0.70", self.code)
         self.assertIn("AUG_PER_CLASS_TARGET = 1000", self.code)
 
+    def test_512_input_is_rebuilt_before_augmentation(self):
+        self.assertIn("EXPERIMENT_IMAGE_SIZE = 512", self.code)
+        self.assertIn("REBUILD_PREPROCESSING = True", self.code)
+        self.assertIn("--target-size", self.code)
+        self.assertIn("--image-size', str(EXPERIMENT_IMAGE_SIZE)", self.code)
+        self.assertIn("EXPERIMENT_BATCH_SIZE = 8", self.code)
+        self.assertIn("preprocess_{EXPERIMENT_IMAGE_SIZE}", self.code)
+
+    def test_512_outputs_use_a_fresh_path(self):
+        self.assertIn("SPLIT_AUG_OUTPUT_ROOT", self.code)
+        self.assertIn("/output/experiments_512", self.code)
+        self.assertIn("SPLIT_AUG_RUN_NAME", self.code)
+        self.assertIn("is_relative_to", self.code)
+
     def test_no_validation_and_checkpoint_resume(self):
         self.assertIn("--no-validation", self.code)
         self.assertIn("--resume", self.code)
