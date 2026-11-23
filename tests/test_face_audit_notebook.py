@@ -32,6 +32,7 @@ class FaceAuditNotebookTests(unittest.TestCase):
         self.assertIn("face_annotation_summary.json", self.code)
         self.assertIn("visual_examples", self.code)
         self.assertIn("audit_face_annotation_coverage.py", self.code)
+        self.assertIn("face_skin_utils.py", self.code)
 
     def test_uses_original_manifest_and_no_training(self):
         self.assertIn("recover_source_run", self.code)

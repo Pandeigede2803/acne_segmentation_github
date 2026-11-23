@@ -25,9 +25,11 @@ tanpa training, lalu model dilatih di **Step 31b**. Protokol training adalah
 |---|---|---|
 | **31** | Preprocessing 512, split 60/40 & 70/30, augmentasi 1000/kelas, validasi manifest | ❌ tidak |
 | **31b** | Training proposed pada data Step 31, checkpoint, evaluasi test sekali | ✅ ya |
+| **33** | Salinan data 512 dengan filter wajah+kulit (step terpisah) | ❌ tidak |
 
 Step 31 menulis `split_aug_preparation.csv`; Step 31b menulis
-`split_aug_results.csv`.
+`split_aug_results.csv`. Untuk training data filter Step 33, jalankan Step 31b
+dengan `TRAINING_VARIANT = 'skinfilter'`.
 
 ## File
 
@@ -35,8 +37,11 @@ Step 31 menulis `split_aug_preparation.csv`; Step 31b menulis
 - `scripts/augment_train_pairs_offline.py` — opsi `--target-per-class`.
 - `scripts/train_proposal_hybrid_resnet50_malds.py` — `--no-validation`,
   Macro F1, checkpoint epoch akhir.
+- `scripts/preprocess_skin_filter.py` + `scripts/face_skin_utils.py` —
+  filter wajah+kulit untuk Step 33.
 - Notebook **Step 31** — persiapan data saja.
 - Notebook **Step 31b** — training dan ringkasan test.
+- Notebook **Step 33** — persiapan data filter wajah+kulit.
 
 ## Output
 

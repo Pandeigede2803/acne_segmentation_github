@@ -59,6 +59,8 @@ class SplitAugNotebookTests(unittest.TestCase):
 
     def test_step_31b_trains_only_prepared_data(self):
         self.assertIn("RUN_SPLIT_AUG_TRAINING = False", self.train_code)
+        self.assertIn("TRAINING_VARIANT = 'raw'", self.train_code)
+        self.assertIn("'skinfilter'", self.train_code)
         self.assertIn("--no-validation", self.train_code)
         self.assertIn("--resume", self.train_code)
         self.assertIn("train_proposal_hybrid_resnet50_malds.py", self.train_code)
