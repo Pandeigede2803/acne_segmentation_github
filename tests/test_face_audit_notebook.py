@@ -34,6 +34,13 @@ class FaceAuditNotebookTests(unittest.TestCase):
         self.assertIn("audit_face_annotation_coverage.py", self.code)
         self.assertIn("face_skin_utils.py", self.code)
 
+    def test_fast_resumable_audit(self):
+        self.assertIn("FACE_AUDIT_DETECT_MAX_SIZE = 512", self.code)
+        self.assertIn("FACE_AUDIT_CHECKPOINT_EVERY", self.code)
+        self.assertIn("--detect-max-size", self.code)
+        self.assertIn("--checkpoint-every", self.code)
+        self.assertIn("Checkpoint parsial", self.markdown)
+
     def test_uses_original_manifest_and_no_training(self):
         self.assertIn("recover_source_run", self.code)
         self.assertIn("original_manifest", self.code)

@@ -13,6 +13,8 @@ import argparse
 import csv
 import hashlib
 import json
+import os
+import time
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -72,7 +74,8 @@ def load_circles(annotations_path):
 def analyze_image(bgr, circles, args):
     """Return face/skin/annotation masks and per-image coverage values."""
     height, width = bgr.shape[:2]
-    face_box = detect_face(bgr, args.min_neighbors, args.min_face_size)
+    face_box = detect_face(bgr, args.min_neighbors, args.min_face_size,
+                           getattr(args, "detect_max_size", 512))
     face_mask = np.zeros((height, width), dtype=np.uint8)
     if face_box is not None:
         x, y, w, h = face_box
@@ -259,6 +262,10 @@ def main():
     parser.add_argument("--max-images", type=int, default=0, help="0 = semua.")
     parser.add_argument("--min-neighbors", type=int, default=5)
     parser.add_argument("--min-face-size", type=int, default=30)
+    parser.add_argument("--detect-max-size", type=int, default=512,
+                        help="Sisi terpanjang citra untuk deteksi wajah; lebih kecil = lebih cepat.")
+    parser.add_argument("--checkpoint-every", type=int, default=25,
+                        help="Simpan checkpoint parsial setiap N citra.")
     parser.add_argument("--skin-cr-min", type=int, default=133)
     parser.add_argument("--skin-cr-max", type=int, default=180)
     parser.add_argument("--skin-cb-min", type=int, default=77)
@@ -277,64 +284,122 @@ def main():
         raise ValueError("Manifest kosong.")
     circles_by_file, sizes = load_circles(args.annotations_json)
 
-    records = []
-    missing = []
-    for index, row in enumerate(rows, start=1):
-        image_path = Path(row.get("image_path", ""))
-        if not image_path.is_file() and args.image_dir is not None:
-            image_path = args.image_dir / row["filename"]
-        if not image_path.is_file():
-            missing.append(row["filename"])
-            continue
-        bgr = cv2.imread(str(image_path))
-        if bgr is None:
-            missing.append(row["filename"])
-            continue
-        height, width = bgr.shape[:2]
-        if row["filename"] in sizes and sizes[row["filename"]] != (width, height):
-            raise ValueError(f"Ukuran {row['filename']} {width}x{height} != metadata {sizes[row['filename']]}.")
-        metrics = analyze_image(bgr, circles_by_file.get(row["filename"], []), args)
-        metrics.pop("region")
-        records.append({
-            "filename": row["filename"], "label_name": row.get("label_name", ""),
-            "label_index": int(row["label_index"]), "split": row.get("split", ""),
-            "image_path": str(image_path), "image_width": width, "image_height": height,
-            **metrics,
-        })
-        if index % 100 == 0:
-            print(f"  {index}/{len(rows)} citra selesai", flush=True)
-    if missing:
-        raise FileNotFoundError(
-            f"{len(missing)} foto asli tidak ditemukan (contoh: {missing[:3]}). "
-            "Jalankan Step 5/6 atau berikan --image-dir.")
-
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    with (args.output_dir / "face_annotation_audit.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS, extrasaction="ignore")
-        writer.writeheader()
-        writer.writerows(records)
-    summary = summarize(records)
-    summary["provenance"] = {
+    config_path = args.output_dir / "audit_config.json"
+    summary_path = args.output_dir / "face_annotation_summary.json"
+    final_csv = args.output_dir / "face_annotation_audit.csv"
+    checkpoint_path = args.output_dir / "face_annotation_audit.partial.jsonl"
+    config = {
         "manifest": str(args.manifest), "manifest_sha256": file_hash(args.manifest),
         "annotations": str(args.annotations_json), "annotations_sha256": file_hash(args.annotations_json),
         "script_sha256": file_hash(__file__), "face_backend": "opencv_haar",
+        "detect_max_size": args.detect_max_size, "min_neighbors": args.min_neighbors,
+        "min_face_size": args.min_face_size,
         "skin_thresholds": {"cr": [args.skin_cr_min, args.skin_cr_max],
                             "cb": [args.skin_cb_min, args.skin_cb_max],
                             "v_min": args.skin_v_min, "morph": args.skin_morph},
     }
-    (args.output_dir / "face_annotation_summary.json").write_text(
-        json.dumps(summary, indent=2), encoding="utf-8")
+    if config_path.is_file():
+        if json.loads(config_path.read_text(encoding="utf-8")) != config:
+            raise ValueError("Manifest/anotasi/parameter audit berbeda. Gunakan output dir baru.")
+    else:
+        if final_csv.is_file() or summary_path.is_file():
+            raise ValueError("Output berisi hasil audit lama tanpa config; gunakan output dir baru.")
+        config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    examples = select_examples(records, args.examples) if args.examples > 0 else []
-    written = draw_examples(examples, args.output_dir / "visual_examples", circles_by_file, args)
+    if summary_path.is_file():
+        previous = json.loads(summary_path.read_text(encoding="utf-8"))
+        if previous.get("complete") and previous.get("provenance") == config:
+            print("Audit lengkap sudah tersedia; tidak dijalankan ulang.")
+            print("CSV:", final_csv)
+            return
+
+    records = []
+    if checkpoint_path.is_file():
+        for line in checkpoint_path.read_text(encoding="utf-8").splitlines():
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    wanted = {row["filename"] for row in rows}
+    records = [record for record in records if record.get("filename") in wanted]
+    unique = {record["filename"]: record for record in records}
+    records = list(unique.values())
+    done = {record["filename"] for record in records}
+    remaining = [row for row in rows if row["filename"] not in done]
+    if records:
+        print(f"♻️ Resume audit: {len(records)}/{len(rows)} citra sudah ada.", flush=True)
+    print(f"🧭 Audit {len(remaining)} citra tersisa (deteksi maks {args.detect_max_size}px, "
+          f"{args.checkpoint_every} citra/checkpoint).", flush=True)
+
+    missing = []
+    started = time.monotonic()
+    processed = 0
+    with checkpoint_path.open("a", encoding="utf-8") as checkpoint:
+        for row in remaining:
+            image_path = Path(row.get("image_path", ""))
+            if not image_path.is_file() and args.image_dir is not None:
+                image_path = args.image_dir / row["filename"]
+            if not image_path.is_file():
+                missing.append(row["filename"])
+                continue
+            bgr = cv2.imread(str(image_path))
+            if bgr is None:
+                missing.append(row["filename"])
+                continue
+            height, width = bgr.shape[:2]
+            if row["filename"] in sizes and sizes[row["filename"]] != (width, height):
+                raise ValueError(f"Ukuran {row['filename']} {width}x{height} != metadata {sizes[row['filename']]}.")
+            metrics = analyze_image(bgr, circles_by_file.get(row["filename"], []), args)
+            metrics.pop("region")
+            record = {
+                "filename": row["filename"], "label_name": row.get("label_name", ""),
+                "label_index": int(row["label_index"]), "split": row.get("split", ""),
+                "image_path": str(image_path), "image_width": width, "image_height": height,
+                **metrics,
+            }
+            records.append(record)
+            checkpoint.write(json.dumps(record) + "\n")
+            processed += 1
+            if processed % max(1, args.checkpoint_every) == 0:
+                checkpoint.flush()
+                os.fsync(checkpoint.fileno())
+                elapsed = max(1e-6, time.monotonic() - started)
+                rate = processed / elapsed
+                eta = (len(remaining) - processed) / rate if rate else 0
+                print(f"  {len(records)}/{len(rows)} citra | {rate:.1f} img/s | sisa ±{eta:.0f}s", flush=True)
+
+    order = {row["filename"]: index for index, row in enumerate(rows)}
+    records.sort(key=lambda record: order.get(record["filename"], 10**9))
+    with final_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(records)
+    summary = summarize(records)
+    complete = len(records) == len(rows) and not missing
+    summary["complete"] = complete
+    summary["n_requested"] = len(rows)
+    summary["n_processed"] = len(records)
+    summary["missing_images"] = missing
+    summary["provenance"] = config
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    if missing:
+        print(f"⚠️ {len(missing)} foto tidak ditemukan (contoh: {missing[:3]}). "
+              "Perbaiki --image-dir, lalu jalankan ulang untuk melanjutkan.", flush=True)
+    if complete and args.examples > 0:
+        examples = select_examples(records, args.examples)
+        written = draw_examples(examples, args.output_dir / "visual_examples", circles_by_file, args)
+        print("Contoh visual:", ", ".join(str(path) for path in written))
+    elif not complete:
+        print("⏳ Belum lengkap. Jalankan ulang Step 32; checkpoint parsial akan dilanjutkan.", flush=True)
     print(json.dumps({key: summary[key] for key in (
         "n_images", "face_detection_rate_pct", "mean_face_area_pct",
         "mean_inside_face_pct", "mean_inside_skin_pct", "mean_inside_union_pct",
         "images_fully_inside_union", "images_below_90pct", "images_below_50pct",
-        "images_zero_coverage")}, indent=2))
-    print("Contoh visual:", ", ".join(str(path) for path in written))
-    print("CSV:", args.output_dir / "face_annotation_audit.csv")
-    print("Ringkasan:", args.output_dir / "face_annotation_summary.json")
+        "images_zero_coverage", "complete", "n_processed", "n_requested")}, indent=2))
+    print("CSV:", final_csv)
+    print("Ringkasan:", summary_path)
 
 
 if __name__ == "__main__":

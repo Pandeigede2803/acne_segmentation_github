@@ -23,25 +23,52 @@ def expand_box(box, scale, width, height):
     return left, top, max(1, right - left), max(1, bottom - top)
 
 
-def detect_face(bgr, min_neighbors=5, min_size=30):
-    """Detect the largest face using the Haar cascades shipped with OpenCV."""
-    gray = cv2.equalizeHist(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY))
+def detect_face(bgr, min_neighbors=5, min_size=30, max_size=512):
+    """Detect the largest face; detection runs on a downscaled grayscale image."""
+    height, width = bgr.shape[:2]
+    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+    scale = min(1.0, float(max_size) / max(height, width))
+    if scale < 1.0:
+        gray = cv2.resize(gray, (max(1, int(round(width * scale))), max(1, int(round(height * scale)))),
+                          interpolation=cv2.INTER_AREA)
+    gray = cv2.equalizeHist(gray)
+    scaled_min = max(20, int(round(min_size * scale)))
     boxes = []
-    for name in ("haarcascade_frontalface_default.xml",
-                 "haarcascade_frontalface_alt2.xml",
-                 "haarcascade_profileface.xml"):
+
+    def run(name, flip=False):
         cascade = cv2.CascadeClassifier(cv2.data.haarcascades + name)
         if cascade.empty():
-            continue
-        for x, y, w, h in cascade.detectMultiScale(
-                gray, scaleFactor=1.1, minNeighbors=min_neighbors, minSize=(min_size, min_size)):
-            boxes.append((int(x), int(y), int(w), int(h)))
-        if name == "haarcascade_profileface.xml":
-            flipped = cv2.flip(gray, 1)
+            return []
+        found = []
+        targets = [(gray, False)]
+        if flip:
+            targets.append((cv2.flip(gray, 1), True))
+        for image, mirrored in targets:
             for x, y, w, h in cascade.detectMultiScale(
-                    flipped, scaleFactor=1.1, minNeighbors=min_neighbors, minSize=(min_size, min_size)):
-                boxes.append((int(gray.shape[1] - x - w), int(y), int(w), int(h)))
-    return max(boxes, key=lambda box: box[2] * box[3]) if boxes else None
+                    image, scaleFactor=1.1, minNeighbors=min_neighbors,
+                    minSize=(scaled_min, scaled_min)):
+                if mirrored:
+                    x = image.shape[1] - x - w
+                found.append((int(x), int(y), int(w), int(h)))
+        return found
+
+    # Fast path: frontal face usually succeeds, so profile cascades are skipped.
+    for name, flip in (("haarcascade_frontalface_default.xml", False),
+                       ("haarcascade_frontalface_alt2.xml", False),
+                       ("haarcascade_profileface.xml", True)):
+        boxes = run(name, flip)
+        if boxes:
+            break
+    if not boxes:
+        return None
+    box = max(boxes, key=lambda item: item[2] * item[3])
+    if scale < 1.0:
+        x, y, w, h = box
+        box = (int(round(x / scale)), int(round(y / scale)),
+               int(round(w / scale)), int(round(h / scale)))
+    x, y, w, h = box
+    x, y = max(0, x), max(0, y)
+    return x, y, max(1, min(w, width - x)), max(1, min(h, height - y))
 
 
 def skin_map(bgr, face_box, cr_range, cb_range, v_min, morph_size):
@@ -66,7 +93,8 @@ def skin_map(bgr, face_box, cr_range, cb_range, v_min, morph_size):
 def face_skin_region(bgr, args):
     """Return (face_box, face_mask, skin_mask, union_region)."""
     height, width = bgr.shape[:2]
-    face_box = detect_face(bgr, args.min_neighbors, args.min_face_size)
+    face_box = detect_face(bgr, args.min_neighbors, args.min_face_size,
+                           getattr(args, "detect_max_size", 512))
     face_mask = np.zeros((height, width), dtype=np.uint8)
     if face_box is not None:
         x, y, w, h = face_box
