@@ -1,4 +1,4 @@
-"""Static checks for the train/test-only split + 1000/class augmentation step."""
+"""Static checks for the preprocessing-only Step 31 and training Step 31b."""
 
 import ast
 import json
@@ -14,50 +14,58 @@ class SplitAugNotebookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
-        index = next(i for i, cell in enumerate(cells)
-                     if cell["cell_type"] == "markdown"
-                     and "## 31." in "".join(cell["source"]))
-        cls.markdown = "".join(cells[index]["source"])
-        cls.code = "".join(cells[index + 1]["source"])
-        ast.parse(cls.code)
 
-    def test_default_off_and_both_splits(self):
-        self.assertIn("RUN_SPLIT_AUG = False", self.code)
-        self.assertIn("'60_40': 0.60", self.code)
-        self.assertIn("'70_30': 0.70", self.code)
-        self.assertIn("AUG_PER_CLASS_TARGET = 1000", self.code)
+        def heading(prefix):
+            return next(i for i, cell in enumerate(cells)
+                        if cell["cell_type"] == "markdown"
+                        and "".join(cell["source"]).startswith(f"---\n## {prefix} "))
 
-    def test_512_input_is_rebuilt_before_augmentation(self):
-        self.assertIn("EXPERIMENT_IMAGE_SIZE = 512", self.code)
-        self.assertIn("REBUILD_PREPROCESSING = True", self.code)
-        self.assertIn("--target-size", self.code)
-        self.assertIn("--image-size', str(EXPERIMENT_IMAGE_SIZE)", self.code)
-        self.assertIn("EXPERIMENT_BATCH_SIZE = 8", self.code)
-        self.assertIn("preprocess_{EXPERIMENT_IMAGE_SIZE}", self.code)
+        cls.prep_index = heading("31.")
+        cls.train_index = heading("31b.")
+        cls.prep_markdown = "".join(cells[cls.prep_index]["source"])
+        cls.prep_code = "".join(cells[cls.prep_index + 1]["source"])
+        cls.train_markdown = "".join(cells[cls.train_index]["source"])
+        cls.train_code = "".join(cells[cls.train_index + 1]["source"])
+        ast.parse(cls.prep_code)
+        ast.parse(cls.train_code)
 
-    def test_512_outputs_use_a_fresh_path(self):
-        self.assertIn("SPLIT_AUG_OUTPUT_ROOT", self.code)
-        self.assertIn("/output/experiments_512", self.code)
-        self.assertIn("SPLIT_AUG_RUN_NAME", self.code)
-        self.assertIn("is_relative_to", self.code)
+    def test_step_31_is_preprocessing_only(self):
+        self.assertIn("RUN_SPLIT_AUG = False", self.prep_code)
+        self.assertIn("TIDAK ada training di step ini", self.prep_code)
+        self.assertNotIn("--no-validation", self.prep_code)
+        self.assertNotIn("--resume", self.prep_code)
+        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", self.prep_code)
+        self.assertIn("split_aug_preparation.csv", self.prep_code)
 
-    def test_no_validation_and_checkpoint_resume(self):
-        self.assertIn("--no-validation", self.code)
-        self.assertIn("--resume", self.code)
-        self.assertIn("last_checkpoint", self.markdown)
-        self.assertNotIn("--skip-test-eval", self.code)
+    def test_preprocessing_builds_512_before_split(self):
+        self.assertIn("EXPERIMENT_IMAGE_SIZE = 512", self.prep_code)
+        self.assertIn("REBUILD_PREPROCESSING = True", self.prep_code)
+        self.assertIn("--target-size", self.prep_code)
+        self.assertIn("--preprocessing-mode", self.prep_code)
+        self.assertIn("preprocess_{EXPERIMENT_IMAGE_SIZE}", self.prep_code)
 
-    def test_absolute_augmentation_and_manifest_guards(self):
-        self.assertIn("--target-per-class", self.code)
-        self.assertIn("manifest_split.csv", self.code)
-        self.assertIn("manifest_aug.csv", self.code)
-        self.assertIn("Baris test berubah", self.code)
-        self.assertIn("split_aug_results.csv", self.code)
+    def test_two_splits_and_absolute_augmentation(self):
+        self.assertIn("'60_40': 0.60", self.prep_code)
+        self.assertIn("'70_30': 0.70", self.prep_code)
+        self.assertIn("AUG_PER_CLASS_TARGET = 1000", self.prep_code)
+        self.assertIn("--target-per-class", self.prep_code)
+        self.assertIn("Baris test berubah", self.prep_code)
 
-    def test_markdown_has_icons(self):
-        self.assertIn("🎯", self.markdown)
-        self.assertIn("🛡️", self.markdown)
-        self.assertIn("📤", self.markdown)
+    def test_fresh_output_path_and_no_old_mixing(self):
+        self.assertIn("SPLIT_AUG_OUTPUT_ROOT", self.prep_code)
+        self.assertIn("/output/experiments_512", self.prep_code)
+        self.assertIn("is_relative_to", self.prep_code)
+        self.assertIn("split_aug_preparation.csv", self.prep_code)
+
+    def test_step_31b_trains_only_prepared_data(self):
+        self.assertIn("RUN_SPLIT_AUG_TRAINING = False", self.train_code)
+        self.assertIn("--no-validation", self.train_code)
+        self.assertIn("--resume", self.train_code)
+        self.assertIn("train_proposal_hybrid_resnet50_malds.py", self.train_code)
+        self.assertIn("--image-size', str(EXPERIMENT_IMAGE_SIZE)", self.train_code)
+        self.assertIn("EXPERIMENT_BATCH_SIZE = 8", self.train_code)
+        self.assertIn("split_aug_results.csv", self.train_code)
+        self.assertIn("Jalankan Step 31 dulu", self.train_code)
 
     def test_trainer_supports_no_validation(self):
         source = TRAINER.read_text(encoding="utf-8")

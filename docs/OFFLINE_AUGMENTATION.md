@@ -18,16 +18,17 @@ citra** menjadi train/test saja (tanpa `val`), stratified per kelas dengan seed
 menerima `--target-per-class 1000` untuk menambah tiap kelas train sampai 1.000
 pasangan foto-mask; baris test disalin tanpa augmentasi.
 
-Notebook Step 31 menjalankan dua setup, **60/40** dan **70/30**, dengan input
-**512×512**. Karena preprocessed Step 10 tersimpan 320, Step 31 membangun ulang
-preprocessing 512 (`refine_masks_color.py`, letterbox, warna asli, tanpa
-denoise) sebelum split dan augmentasi; tanpa langkah ini training 512 hanya
-meng-upscale citra 320. Training memakai `--no-validation` dan batch 8. Semua
-output ditulis ke root baru `output/experiments_512/`; run lama hanya dibaca
-sebagai sumber. Karena tidak ada validation untuk memilih checkpoint,
-`last_checkpoint.pt` tetap ditulis tiap epoch dan `best_model.pt` berisi
-**epoch akhir**; test dievaluasi sekali setelah checkpoint akhir tersimpan.
-Ringkasan kedua setup disimpan di `split_aug_results.csv`. Angka Step 31 adalah
-run baru dan tidak boleh dicampur dengan T1/T2/T3.
+Notebook dipisah menjadi dua langkah. **Step 31** hanya menyiapkan data:
+preprocessing ulang pada **512×512** (`refine_masks_color.py`, letterbox, warna
+asli, tanpa denoise), split **60/40** dan **70/30** tanpa `val`, lalu augmentasi
+train sampai 1.000/kelas. Tanpa preprocessing ulang, training 512 hanya
+meng-upscale citra 320. **Step 31b** baru menjalankan training proposed dengan
+`--no-validation` dan batch 8. Semua output ditulis ke root baru
+`output/experiments_512/`; run lama hanya dibaca sebagai sumber. Karena tidak
+ada validation untuk memilih checkpoint, `last_checkpoint.pt` tetap ditulis tiap
+epoch dan `best_model.pt` berisi **epoch akhir**; test dievaluasi sekali setelah
+checkpoint akhir tersimpan. Ringkasan data ada di `split_aug_preparation.csv`;
+ringkasan test di `split_aug_results.csv`. Angka Step 31b adalah run baru dan
+tidak boleh dicampur dengan T1/T2/T3.
 
 SMOTE tetap eksperimen terpisah pada fitur klasifikasi dan tidak diubah oleh jalur ini. Untuk perbandingan yang adil, bandingkan run biasa dan offline augmentation dengan split, checkpoint awal, konfigurasi, serta seed yang sama; validation/test tetap distribusi asli.
