@@ -73,6 +73,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true", help="Resume from last_checkpoint.pt in output-dir.")
     parser.add_argument("--skip-test-eval", action="store_true",
                         help="Skip test evaluation for cross-validation folds.")
+    parser.add_argument("--no-validation", action="store_true",
+                        help="Train/test only: no validation split and the final-epoch checkpoint is used.")
     return parser.parse_args()
 
 
@@ -424,6 +426,19 @@ def cohen_kappa_from_logits(logits: torch.Tensor, labels: torch.Tensor, num_clas
     return (observed - expected) / (1.0 - expected)
 
 
+def macro_f1_from_logits(logits: torch.Tensor, labels: torch.Tensor, num_classes: int = 4) -> float:
+    preds, labels = logits.argmax(dim=1), labels.view(-1)
+    scores = []
+    for cls in range(num_classes):
+        true_positive = ((preds == cls) & (labels == cls)).sum().item()
+        predicted = (preds == cls).sum().item()
+        support = (labels == cls).sum().item()
+        precision = true_positive / predicted if predicted else 0.0
+        recall = true_positive / support if support else 0.0
+        scores.append(2 * precision * recall / (precision + recall) if precision + recall else 0.0)
+    return sum(scores) / num_classes
+
+
 def run_epoch(
     model: ProposalHybridResNet50,
     loader: DataLoader,
@@ -480,6 +495,7 @@ def run_epoch(
     metrics = {key: value / max(1, count) for key, value in totals.items()}
     if all_labels:
         metrics["kappa"] = cohen_kappa_from_logits(torch.cat(all_logits), torch.cat(all_labels)).item()
+        metrics["macro_f1"] = macro_f1_from_logits(torch.cat(all_logits), torch.cat(all_labels))
     return metrics
 
 
@@ -488,8 +504,12 @@ def build_loaders(args: argparse.Namespace, rows: list[dict[str, str]]) -> tuple
     val_rows = [row for row in rows if row["split"] == "val"]
     test_rows = [row for row in rows if row["split"] == "test"]
     train_counts = Counter(int(row["label_index"]) for row in train_rows)
+    if args.no_validation and val_rows:
+        raise ValueError("--no-validation mengharuskan split validation kosong; jangan sisakan baris val.")
     for split_name, split_rows in [("train", train_rows), ("val", val_rows), ("test", test_rows)]:
-        if not split_rows and not (split_name == "test" and args.skip_test_eval):
+        empty_allowed = ((split_name == "test" and args.skip_test_eval)
+                         or (split_name == "val" and args.no_validation))
+        if not split_rows and not empty_allowed:
             raise ValueError(f"Split {split_name} kosong. Periksa manifest.")
         if any(int(row["label_index"]) not in range(4) for row in split_rows):
             raise ValueError(f"Label pada split {split_name} harus 0 sampai 3.")
@@ -559,12 +579,14 @@ def main() -> None:
     train_loader, val_loader, test_loader, class_weights = build_loaders(args, rows)
     class_weights = class_weights.to(device)
     train_class_counts = Counter(int(row["label_index"]) for row in rows if row["split"] == "train")
+    has_validation = len(val_loader.dataset) > 0
 
     print(f"🚀 Hybrid training variant: {args.variant} | label distribution: {args.resolved_label_distribution}")
     print(f"🧾 Manifest: {args.manifest}")
     print(f"🖥️ Device: {device}")
     print(f"🖼️ Input normalization: {args.resolved_input_normalization}")
     print(f"✅ Split: train={len(train_loader.dataset)}, val={len(val_loader.dataset)}, test={len(test_loader.dataset)}")
+    print(f"🧭 Mode: {'train/test tanpa validasi (checkpoint epoch akhir)' if not has_validation else 'train/validation/test'}")
     print(f"⚖️ Class weights: {[round(x, 4) for x in class_weights.detach().cpu().tolist()]}")
     print(f"Train class counts: {[train_class_counts[idx] for idx in range(4)]}")
     print(f"Class weighting: {args.class_weighting}; weighted sampler: {args.weighted_sampler}")
@@ -573,7 +595,8 @@ def main() -> None:
 
     model = ProposalHybridResNet50(num_classes=4, pretrained=args.pretrained, variant=args.variant).to(device)
     start_epoch = 1
-    best_val_loss = float("inf")
+    best_val_loss = float("inf") if has_validation else None
+    best_epoch = 0
     history: list[dict[str, float | int | str]] = []
     total_epochs = args.phase1_epochs + args.phase2_epochs
 
@@ -593,15 +616,21 @@ def main() -> None:
         checkpoint_args = checkpoint.get("args", {})
         saved_variant = checkpoint_args.get("variant", "proposed")
         saved_distribution = checkpoint_args.get("resolved_label_distribution", "malds")
-        if saved_variant != args.variant or saved_distribution != args.resolved_label_distribution:
+        saved_no_validation = bool(checkpoint_args.get("no_validation", False))
+        if (saved_variant != args.variant or saved_distribution != args.resolved_label_distribution
+                or saved_no_validation != args.no_validation):
             raise ValueError(
-                "Konfigurasi variant/label-distribution checkpoint berbeda. "
+                "Konfigurasi variant/label-distribution/no-validation checkpoint berbeda. "
                 "Gunakan output-dir baru untuk eksperimen atau resume hanya dengan konfigurasi yang sama."
             )
         model.load_state_dict(checkpoint["model_state_dict"])
         start_epoch = int(checkpoint["epoch"]) + 1
-        best_val_loss = float(checkpoint["best_val_loss"])
+        best_val_loss = checkpoint.get("best_val_loss")
+        best_epoch = int(checkpoint.get("best_epoch", 0) or 0)
         history = checkpoint["history"]
+        if has_validation and history:
+            best_row = min(history, key=lambda item: item["val_loss"])
+            best_epoch, best_val_loss = int(best_row["epoch"]), float(best_row["val_loss"])
         if "phase1_optimizer_state_dict" in checkpoint:
             phase1_optimizer.load_state_dict(checkpoint["phase1_optimizer_state_dict"])
         if "phase2_optimizer_state_dict" in checkpoint:
@@ -624,10 +653,13 @@ def main() -> None:
         print(f"🔁 Resume dari epoch {start_epoch}")
 
         if start_epoch > total_epochs:
-            raise ValueError(
-                f"Checkpoint sudah mencapai epoch {start_epoch - 1}, sama dengan/lebih dari batas {total_epochs}. "
-                "Naikkan jumlah epoch atau gunakan output-dir baru untuk eksperimen baru."
-            )
+            if not args.no_validation:
+                raise ValueError(
+                    f"Checkpoint sudah mencapai epoch {start_epoch - 1}, sama dengan/lebih dari batas {total_epochs}. "
+                    "Naikkan jumlah epoch atau gunakan output-dir baru untuk eksperimen baru."
+                )
+            print("♻️ Checkpoint tanpa validasi sudah final; lanjut evaluasi test.")
+            best_epoch = total_epochs
 
     for epoch in range(start_epoch, total_epochs + 1):
         phase = "phase1_freeze" if epoch <= args.phase1_epochs else "phase2_unfreeze"
@@ -642,24 +674,30 @@ def main() -> None:
 
         print(f"📘 Epoch {epoch:03d}/{total_epochs} | {phase} | lr={lr}")
         train_metrics = run_epoch(model, train_loader, device, optimizer, args, class_weights)
-        with torch.no_grad():
-            val_metrics = run_epoch(model, val_loader, device, optimizer=None, args=args, class_weights=class_weights)
+        val_metrics = None
+        if has_validation:
+            with torch.no_grad():
+                val_metrics = run_epoch(model, val_loader, device, optimizer=None, args=args, class_weights=class_weights)
 
         row = {
             "epoch": epoch,
             "phase": phase,
             **{f"train_{key}": value for key, value in train_metrics.items()},
-            **{f"val_{key}": value for key, value in val_metrics.items()},
         }
+        if val_metrics is not None:
+            row.update({f"val_{key}": value for key, value in val_metrics.items()})
         history.append(row)
         print(
             f"Epoch {epoch:03d} | "
-            f"train_loss={train_metrics['loss']:.4f} train_acc={train_metrics['acc']:.4f} train_kappa={train_metrics['kappa']:.4f} train_dice={train_metrics['dice']:.4f} | "
-            f"val_loss={val_metrics['loss']:.4f} val_acc={val_metrics['acc']:.4f} val_kappa={val_metrics['kappa']:.4f} val_dice={val_metrics['dice']:.4f}"
+            f"train_loss={train_metrics['loss']:.4f} train_acc={train_metrics['acc']:.4f} train_kappa={train_metrics['kappa']:.4f} train_dice={train_metrics['dice']:.4f}"
+            + (f" | val_loss={val_metrics['loss']:.4f} val_acc={val_metrics['acc']:.4f} "
+               f"val_kappa={val_metrics['kappa']:.4f} val_dice={val_metrics['dice']:.4f}"
+               if val_metrics is not None else "")
         )
 
-        if val_metrics["loss"] < best_val_loss:
+        if val_metrics is not None and val_metrics["loss"] < best_val_loss:
             best_val_loss = val_metrics["loss"]
+            best_epoch = epoch
             torch.save(model.state_dict(), best_model_path)
             print("💾 Best model diperbarui")
 
@@ -667,6 +705,7 @@ def main() -> None:
             {
                 "epoch": epoch,
                 "best_val_loss": best_val_loss,
+                "best_epoch": best_epoch,
                 "model_state_dict": model.state_dict(),
                 "phase1_optimizer_state_dict": phase1_optimizer.state_dict(),
                 "phase2_optimizer_state_dict": phase2_optimizer.state_dict(),
@@ -680,6 +719,11 @@ def main() -> None:
             last_checkpoint_path,
         )
         save_json({"history": history, "best_val_loss": best_val_loss}, args.output_dir / "history_partial.json")
+
+    if not has_validation:
+        best_epoch = total_epochs
+        torch.save(model.state_dict(), best_model_path)
+        print("💾 Checkpoint epoch akhir disimpan (tanpa validasi).")
 
     if args.skip_test_eval:
         test_metrics = None
@@ -708,6 +752,8 @@ def main() -> None:
             "label_distribution": args.resolved_label_distribution,
         },
         "best_val_loss": best_val_loss,
+        "best_epoch": best_epoch,
+        "checkpoint_selection": ("final_epoch_no_validation" if not has_validation else "min_val_loss"),
         "test_metrics": test_metrics,
         "history": history,
     }

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Create paired, offline image-mask augmentations for train rows only."""
+"""Create paired, offline image-mask augmentations for train rows only.
+
+Use --target-per-class 1000 to reach an absolute per-class train target
+(1000-2000) instead of the default ratio against the largest class.
+"""
 import argparse
 import csv
 import random
@@ -9,6 +13,18 @@ from pathlib import Path
 from PIL import Image, ImageEnhance
 
 
+def class_targets(counts, target_ratio, target_per_class=0):
+    """Return the per-class train target used before adding synthetic pairs."""
+    if target_per_class:
+        if target_per_class < 1:
+            raise ValueError('--target-per-class harus >= 1.')
+        return {cls: max(count, target_per_class) for cls, count in counts.items()}
+    if not 0 < target_ratio <= 1:
+        raise ValueError('--target-ratio must be in (0, 1].')
+    max_count = max(counts.values())
+    return {cls: max(count, int(max_count * target_ratio + 0.5)) for cls, count in counts.items()}
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest', type=Path, required=True)
@@ -16,6 +32,8 @@ def main():
     p.add_argument('--output-manifest', type=Path, required=True)
     p.add_argument('--target-ratio', type=float, default=0.75,
                    help='Minority target as fraction of largest train class (default: 0.75).')
+    p.add_argument('--target-per-class', type=int, default=0,
+                   help='Absolute train target per class, mis. 1000. 0 = pakai --target-ratio.')
     p.add_argument('--seed', type=int, default=42)
     p.add_argument('--rotation-deg', type=float, default=15)
     p.add_argument('--brightness', type=float, default=0.15)
@@ -23,6 +41,8 @@ def main():
     a = p.parse_args()
     if not 0 < a.target_ratio <= 1:
         p.error('--target-ratio must be in (0, 1].')
+    if a.target_per_class < 0:
+        p.error('--target-per-class must be >= 0.')
     with a.manifest.open(newline='', encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
         fields = list(rows[0]) if rows else []
@@ -41,8 +61,7 @@ def main():
     if not train:
         raise ValueError('Manifest has no train rows.')
     counts = Counter(int(r['label_index']) for r in train)
-    max_count = max(counts.values())
-    targets = {c: max(n, int(max_count * a.target_ratio + 0.5)) for c, n in counts.items()}
+    targets = class_targets(counts, a.target_ratio, a.target_per_class)
     rng = random.Random(a.seed)
     a.output_dir.mkdir(parents=True, exist_ok=True)
     additions = []

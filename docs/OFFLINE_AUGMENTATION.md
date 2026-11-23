@@ -10,4 +10,19 @@ Di Colab, jalankan Step 6 dan audit Step 8, lalu Step 10 dan Step 10a dengan `OF
 
 Cache preprocessing/augmentasi tanpa provenance yang sesuai ditolak. Gunakan folder baru untuk sumber/protokol berbeda dan pertahankan hasil lama. Lihat [panduan verifikasi dataset](ACNE04V2_DATASET_VALIDATION.md).
 
+## Split train/test tanpa validasi + 1000/kelas — Step 31
+
+`scripts/split_train_test_manifest.py` membagi ulang **manifest asli 1.204
+citra** menjadi train/test saja (tanpa `val`), stratified per kelas dengan seed
+42. Split lama diabaikan. `scripts/augment_train_pairs_offline.py` kemudian
+menerima `--target-per-class 1000` untuk menambah tiap kelas train sampai 1.000
+pasangan foto-mask; baris test disalin tanpa augmentasi.
+
+Notebook Step 31 menjalankan dua setup, **60/40** dan **70/30**, lalu training
+proposed dengan `--no-validation`. Karena tidak ada validation untuk memilih
+checkpoint, `last_checkpoint.pt` tetap ditulis tiap epoch dan `best_model.pt`
+berisi **epoch akhir**; test dievaluasi sekali setelah checkpoint akhir tersimpan.
+Ringkasan kedua setup disimpan di `split_aug_results.csv`. Angka Step 31 adalah
+run baru dan tidak boleh dicampur dengan T1/T2/T3.
+
 SMOTE tetap eksperimen terpisah pada fitur klasifikasi dan tidak diubah oleh jalur ini. Untuk perbandingan yang adil, bandingkan run biasa dan offline augmentation dengan split, checkpoint awal, konfigurasi, serta seed yang sama; validation/test tetap distribusi asli.
