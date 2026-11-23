@@ -33,6 +33,7 @@ class FaceAuditNotebookTests(unittest.TestCase):
         self.assertIn("visual_examples", self.code)
         self.assertIn("audit_face_annotation_coverage.py", self.code)
         self.assertIn("face_skin_utils.py", self.code)
+        self.assertIn("fetch_script('face_skin_utils.py', force=True)", self.code)
 
     def test_fast_resumable_audit(self):
         self.assertIn("FACE_AUDIT_DETECT_MAX_SIZE = 512", self.code)
