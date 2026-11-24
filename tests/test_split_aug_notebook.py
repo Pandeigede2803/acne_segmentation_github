@@ -87,6 +87,17 @@ class SplitAugNotebookTests(unittest.TestCase):
         self.assertIn("split_aug_results_{TRAINING_RUN_ID}.csv", self.train_code)
         self.assertIn("Pilih `TRAINING_SPLIT", self.train_markdown)
 
+    def test_step_31b_honors_service_account_drive_mode(self):
+        self.assertIn("DRIVE_ACCESS_MODE == 'service_account'", self.train_code)
+        self.assertIn("download_folder(DRIVE_API", self.train_code)
+        self.assertIn("upload_folder(DRIVE_API, train_dir", self.train_code)
+        self.assertIn("upload_file(DRIVE_API, results_path", self.train_code)
+        self.assertIn("DRIVE_ACCESS_MODE == 'mount'", self.train_code)
+        self.assertIn("Path('/content/drive').is_mount()", self.train_code)
+        self.assertNotIn("if str(SPLIT_AUG_SOURCE_RUN).startswith('/content/drive/') and not Path('/content/drive/MyDrive').is_dir():\n        from google.colab import drive", self.train_code)
+        self.assertIn("TRAINING_RUN_ID", self.train_code)
+        self.assertIn("find_folder(DRIVE_API", self.train_code)
+
     def test_trainer_supports_no_validation(self):
         source = TRAINER.read_text(encoding="utf-8")
         self.assertIn('"--no-validation"', source)
