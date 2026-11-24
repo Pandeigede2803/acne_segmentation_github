@@ -14,7 +14,7 @@ from scripts.audit_face_annotation_coverage import (
 )
 
 
-def record(filename, label, coverage, face=1, circles=3, face_pct=40.0):
+def record(filename, label, coverage, face=1, circles=3, face_pct=40.0, skin_area=50.0):
     return {
         "filename": filename, "label_name": f"levle{label}", "label_index": label,
         "split": "train", "image_path": f"/img/{filename}", "image_width": 320,
@@ -24,10 +24,27 @@ def record(filename, label, coverage, face=1, circles=3, face_pct=40.0):
         "annotation_inside_face_px": 0, "annotation_inside_face_pct": coverage,
         "annotation_inside_skin_px": 0, "annotation_inside_skin_pct": coverage,
         "annotation_inside_union_pct": coverage, "circles_center_inside_union": 1,
+        "circles_center_inside_skin": 1,
+        "skin_area_pct": skin_area, "skin_mask_usable": int(skin_area >= 40.0),
     }
 
 
 class FaceAuditTests(unittest.TestCase):
+    def test_skin_mask_is_full_frame_and_reports_low_area(self):
+        source = Path(__file__).resolve().parents[1] / "scripts" / "audit_face_annotation_coverage.py"
+        code = source.read_text(encoding="utf-8")
+        self.assertIn("skin_map(bgr, None", code)
+        self.assertIn("region = skin", code)
+        self.assertIn("SKIN_MIN_AREA_PCT = 40.0", code)
+
+    def test_examples_rank_skin_coverage_not_haar_union(self):
+        union_worst = record("union-worst.jpg", 0, 10.0)
+        skin_worst = record("skin-worst.jpg", 0, 90.0)
+        union_worst["annotation_inside_skin_pct"] = 80.0
+        skin_worst["annotation_inside_skin_pct"] = 5.0
+        chosen = select_examples([union_worst, skin_worst], limit=1)
+        self.assertEqual(chosen[0]["filename"], "skin-worst.jpg")
+
     def test_percentage_and_expand_box(self):
         self.assertEqual(percentage(50, 100), 50.0)
         self.assertIsNone(percentage(1, 0))
@@ -67,12 +84,16 @@ class FaceAuditTests(unittest.TestCase):
 
     def test_summary_counts_and_means(self):
         records = [record("a.jpg", 0, 100.0), record("b.jpg", 1, 50.0),
-                   record("c.jpg", 3, 0.0), record("d.jpg", 2, None, face=0, circles=0)]
+                   record("c.jpg", 3, 0.0, skin_area=20.0), record("d.jpg", 2, None, face=0, circles=0)]
         summary = summarize(records)
         self.assertEqual(summary["n_images"], 4)
         self.assertEqual(summary["face_detected"], 3)
         self.assertEqual(summary["annotated_images"], 3)
         self.assertEqual(summary["mean_inside_union_pct"], 50.0)
+        self.assertEqual(summary["mean_skin_area_pct"], 40.0)
+        self.assertEqual(summary["skin_masks_below_40pct"], 1)
+        self.assertEqual(summary["images_zero_skin_coverage"], 1)
+        self.assertEqual(summary["images_below_50pct_skin"], 1)
         self.assertEqual(summary["images_below_50pct"], 1)
         self.assertEqual(summary["images_zero_coverage"], 1)
         self.assertEqual(summary["images_fully_inside_union"], 1)

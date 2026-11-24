@@ -36,6 +36,14 @@ class FaceAuditNotebookTests(unittest.TestCase):
         self.assertIn("face_skin_utils.py", self.code)
         self.assertIn("fetch_script('face_skin_utils.py', force=True)", self.code)
 
+    def test_skin_only_metrics_and_branch_source(self):
+        self.assertIn("acne_segmentation_github/hermes/scripts", self.code)
+        self.assertIn("'mean_skin_area_pct'", self.code)
+        self.assertIn("'skin_masks_below_40pct'", self.code)
+        self.assertIn("summary['worst_skin_coverage']", self.code)
+        self.assertIn("summary['images_zero_skin_coverage']", self.code)
+        self.assertIn("peta kulit penuh-kanvas", self.markdown)
+
     def test_fast_resumable_audit(self):
         self.assertIn("FACE_AUDIT_DETECT_MAX_SIZE = 512", self.code)
         self.assertIn("FACE_AUDIT_CHECKPOINT_EVERY", self.code)
