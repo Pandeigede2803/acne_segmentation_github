@@ -57,6 +57,11 @@ class FaceAuditNotebookTests(unittest.TestCase):
         self.assertIn("baliweb-gsc@concrete-crow-424203-p0.iam.gserviceaccount.com", setup)
         self.assertIn("upload_folder(DRIVE_API, FACE_AUDIT_OUTPUT", self.code)
 
+    def test_repairs_incomplete_opencv_install(self):
+        self.assertIn("hasattr(cv2, \\\"CascadeClassifier\\\")", self.code)
+        self.assertIn("opencv-contrib-python-headless==4.11.0.86", self.code)
+        self.assertIn("OpenCV Haar siap", self.code)
+
     def test_uses_original_manifest_and_no_training(self):
         self.assertIn("recover_source_run", self.code)
         self.assertIn("original_manifest", self.code)
