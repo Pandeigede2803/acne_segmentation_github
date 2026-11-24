@@ -41,8 +41,10 @@ OUTPUT_FIELDS = (
     "n_circles", "annotation_area_px", "annotation_area_pct",
     "annotation_inside_face_px", "annotation_inside_face_pct",
     "annotation_inside_skin_px", "annotation_inside_skin_pct",
-    "annotation_inside_union_pct", "circles_center_inside_union",
+    "annotation_inside_union_pct", "circles_center_inside_union", "circles_center_inside_skin",
+    "skin_area_pct", "skin_mask_usable",
 )
+SKIN_MIN_AREA_PCT = 40.0
 
 
 def file_hash(path):
@@ -80,9 +82,11 @@ def analyze_image(bgr, circles, args):
     if face_box is not None:
         x, y, w, h = face_box
         face_mask[y:y + h, x:x + w] = 255
-    skin = skin_map(bgr, face_box, (args.skin_cr_min, args.skin_cr_max),
+    # Full-frame color mask avoids coupling skin extraction to a Haar box that can land on hair/ears.
+    skin = skin_map(bgr, None, (args.skin_cr_min, args.skin_cr_max),
                     (args.skin_cb_min, args.skin_cb_max), args.skin_v_min, args.skin_morph)
-    region = cv2.bitwise_or(face_mask, skin)
+    union_region = cv2.bitwise_or(face_mask, skin)
+    region = skin
 
     annotation = np.zeros((height, width), dtype=np.uint8)
     for cx, cy, radius in circles:
@@ -91,12 +95,15 @@ def analyze_image(bgr, circles, args):
     annotation_px = int(np.count_nonzero(annotation))
     inside_face = int(np.count_nonzero(cv2.bitwise_and(annotation, face_mask)))
     inside_skin = int(np.count_nonzero(cv2.bitwise_and(annotation, skin)))
-    inside_union = int(np.count_nonzero(cv2.bitwise_and(annotation, region)))
-    centers_inside = 0
+    inside_union = int(np.count_nonzero(cv2.bitwise_and(annotation, union_region)))
+    centers_inside_skin = 0
+    centers_inside_union = 0
     for cx, cy, _ in circles:
         x, y = int(round(cx)), int(round(cy))
-        if 0 <= x < width and 0 <= y < height and region[y, x]:
-            centers_inside += 1
+        if 0 <= x < width and 0 <= y < height:
+            centers_inside_skin += int(bool(skin[y, x]))
+            centers_inside_union += int(bool(union_region[y, x]))
+    skin_area_pct = percentage(int(np.count_nonzero(skin)), width * height)
     metrics = {
         "face_detected": int(face_box is not None),
         "face_x": face_box[0] if face_box else "",
@@ -112,7 +119,10 @@ def analyze_image(bgr, circles, args):
         "annotation_inside_skin_px": inside_skin,
         "annotation_inside_skin_pct": percentage(inside_skin, annotation_px),
         "annotation_inside_union_pct": percentage(inside_union, annotation_px),
-        "circles_center_inside_union": centers_inside,
+        "circles_center_inside_union": centers_inside_union,
+        "circles_center_inside_skin": centers_inside_skin,
+        "skin_area_pct": skin_area_pct,
+        "skin_mask_usable": int(skin_area_pct is not None and skin_area_pct >= SKIN_MIN_AREA_PCT),
         "region": region,
     }
     return metrics
@@ -122,7 +132,7 @@ def select_examples(records, limit=6):
     """Pick one worst-coverage image per label, then fill with the worst cases."""
     annotated = [row for row in records
                  if int(row["n_circles"]) > 0
-                 and row["annotation_inside_union_pct"] is not None]
+                 and row["annotation_inside_skin_pct"] is not None]
     pool = [row for row in annotated if int(row["face_detected"]) == 1]
     chosen, seen = [], set()
     for label in range(4):
@@ -131,10 +141,10 @@ def select_examples(records, limit=6):
             # Prefer a detected face, but still show Very Severe when detection fails.
             detected = [row for row in candidates if int(row["face_detected"]) == 1]
             row = min(detected or candidates,
-                      key=lambda item: item["annotation_inside_union_pct"])
+                      key=lambda item: item["annotation_inside_skin_pct"])
             chosen.append(row)
             seen.add(row["filename"])
-    for row in sorted(pool, key=lambda item: item["annotation_inside_union_pct"]):
+    for row in sorted(pool, key=lambda item: item["annotation_inside_skin_pct"]):
         if len(chosen) >= limit:
             break
         if row["filename"] not in seen:
@@ -162,8 +172,11 @@ def summarize(records):
             "mean_inside_face_pct": mean(row["annotation_inside_face_pct"] for row in subset),
             "mean_inside_skin_pct": mean(row["annotation_inside_skin_pct"] for row in subset),
             "mean_inside_union_pct": mean(row["annotation_inside_union_pct"] for row in subset),
+            "mean_skin_area_pct": mean(row["skin_area_pct"] for row in subset),
+            "skin_masks_below_40pct": sum(1 for row in subset if not int(row["skin_mask_usable"])),
         }
-    worst = sorted(annotated, key=lambda row: row["annotation_inside_union_pct"])[:10]
+    worst_skin = sorted(annotated, key=lambda row: row["annotation_inside_skin_pct"])[:10]
+    worst_union = sorted(annotated, key=lambda row: row["annotation_inside_union_pct"])[:10]
     return {
         "n_images": len(records),
         "face_detected": len(detected),
@@ -174,6 +187,16 @@ def summarize(records):
         "mean_inside_face_pct": mean(row["annotation_inside_face_pct"] for row in annotated),
         "mean_inside_skin_pct": mean(row["annotation_inside_skin_pct"] for row in annotated),
         "mean_inside_union_pct": mean(row["annotation_inside_union_pct"] for row in annotated),
+        "mean_skin_area_pct": mean(row["skin_area_pct"] for row in annotated),
+        "skin_masks_below_40pct": sum(1 for row in annotated if not int(row["skin_mask_usable"])),
+        "images_fully_inside_skin": sum(1 for row in annotated
+                                         if (row["annotation_inside_skin_pct"] or 0) >= 99.999),
+        "images_below_90pct_skin": sum(1 for row in annotated
+                                        if (row["annotation_inside_skin_pct"] or 0) < 90),
+        "images_below_50pct_skin": sum(1 for row in annotated
+                                        if (row["annotation_inside_skin_pct"] or 0) < 50),
+        "images_zero_skin_coverage": sum(1 for row in annotated
+                                          if (row["annotation_inside_skin_pct"] or 0) == 0),
         "images_fully_inside_union": sum(1 for row in annotated
                                          if (row["annotation_inside_union_pct"] or 0) >= 99.999),
         "images_below_90pct": sum(1 for row in annotated
@@ -183,12 +206,21 @@ def summarize(records):
         "images_zero_coverage": sum(1 for row in annotated
                                     if (row["annotation_inside_union_pct"] or 0) == 0),
         "per_label": per_label,
+        "worst_skin_coverage": [
+            {"filename": row["filename"], "label_index": row["label_index"],
+             "inside_skin_pct": row["annotation_inside_skin_pct"],
+             "skin_area_pct": row["skin_area_pct"],
+             "skin_mask_usable": row["skin_mask_usable"]}
+            for row in worst_skin
+        ],
         "worst_union_coverage": [
             {"filename": row["filename"], "label_index": row["label_index"],
              "inside_union_pct": row["annotation_inside_union_pct"],
              "inside_face_pct": row["annotation_inside_face_pct"],
-             "inside_skin_pct": row["annotation_inside_skin_pct"]}
-            for row in worst
+             "inside_skin_pct": row["annotation_inside_skin_pct"],
+             "skin_area_pct": row["skin_area_pct"],
+             "skin_mask_usable": row["skin_mask_usable"]}
+            for row in worst_union
         ],
     }
 
@@ -220,8 +252,7 @@ def draw_examples(examples, output_dir, circles_by_file, args):
             fx, fy, fw, fh = result["face_x"], result["face_y"], result["face_w"], result["face_h"]
             cv2.rectangle(before, (fx, fy), (fx + fw, fy + fh), (0, 220, 255), 2)
             cv2.rectangle(after, (fx, fy), (fx + fw, fy + fh), (0, 220, 255), 2)
-        contours, _ = cv2.findContours(region if result["face_detected"] else np.zeros_like(region),
-                                       cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(region, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(before, contours, -1, (255, 210, 0), 1)
         cv2.drawContours(after, contours, -1, (255, 210, 0), 1)
 
@@ -231,10 +262,10 @@ def draw_examples(examples, output_dir, circles_by_file, args):
                         (245, 245, 245), 1, cv2.LINE_AA)
             return np.vstack([banner, canvas])
 
-        coverage = row["annotation_inside_union_pct"]
+        coverage = row["annotation_inside_skin_pct"]
         before = header(before, f"SEBELUM | {row['filename']} | label {row['label_index']} | "
-                                f"face {row['face_area_pct']}% | circles {row['n_circles']}")
-        after = header(after, f"SESUDAH filter wajah+kulit | anotasi tersisa {coverage}% | "
+                                f"Haar bbox {row['face_area_pct']}% | circles {row['n_circles']}")
+        after = header(after, f"SESUDAH filter kulit | anotasi tertangkap {coverage}% | "
                               f"hijau=masuk, merah=keluar")
         separator = np.full((before.shape[0], 8, 3), 255, dtype=np.uint8)
         panel = np.hstack([before, separator, after])
@@ -293,6 +324,7 @@ def main():
         "manifest": str(args.manifest), "manifest_sha256": file_hash(args.manifest),
         "annotations": str(args.annotations_json), "annotations_sha256": file_hash(args.annotations_json),
         "script_sha256": file_hash(__file__), "face_backend": "opencv_haar",
+        "skin_mask_scope": "full_image", "skin_mask_min_area_pct": SKIN_MIN_AREA_PCT,
         "detect_max_size": args.detect_max_size, "min_neighbors": args.min_neighbors,
         "min_face_size": args.min_face_size,
         "skin_thresholds": {"cr": [args.skin_cr_min, args.skin_cr_max],
