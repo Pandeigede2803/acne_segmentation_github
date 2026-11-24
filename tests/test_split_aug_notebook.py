@@ -71,8 +71,21 @@ class SplitAugNotebookTests(unittest.TestCase):
         self.assertIn("train_proposal_hybrid_resnet50_malds.py", self.train_code)
         self.assertIn("--image-size', str(EXPERIMENT_IMAGE_SIZE)", self.train_code)
         self.assertIn("EXPERIMENT_BATCH_SIZE = 8", self.train_code)
-        self.assertIn("split_aug_results.csv", self.train_code)
+        self.assertIn("split_aug_results_{TRAINING_RUN_ID}.csv", self.train_code)
         self.assertIn("Jalankan Step 31 dulu", self.train_code)
+
+    def test_step_31b_selects_one_fresh_split(self):
+        self.assertIn("TRAINING_SPLIT = '60_40'", self.train_code)
+        self.assertIn("'60_40': 0.60", self.train_code)
+        self.assertIn("'70_30': 0.70", self.train_code)
+        self.assertIn("TRAINING_RUN_ID = 'fresh_01'", self.train_code)
+        self.assertIn("run_root / 'training_runs' / TRAINING_RUN_ID", self.train_code)
+        self.assertIn("TRAINING_SPLIT not in SPLIT_RATIOS", self.train_code)
+        self.assertIn("for setup, train_ratio in SELECTED_SPLITS.items()", self.train_code)
+        self.assertIn("with urlopen('https://raw.githubusercontent.com/Pandeigede2803/acne_segmentation_github/main/scripts/train_proposal_hybrid_resnet50_malds.py'", self.train_code)
+        self.assertNotIn("if not trainer.is_file()", self.train_code)
+        self.assertIn("split_aug_results_{TRAINING_RUN_ID}.csv", self.train_code)
+        self.assertIn("Pilih `TRAINING_SPLIT", self.train_markdown)
 
     def test_trainer_supports_no_validation(self):
         source = TRAINER.read_text(encoding="utf-8")
