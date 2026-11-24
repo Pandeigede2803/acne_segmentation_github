@@ -162,3 +162,35 @@ def upload_folder(service, source: str | Path, parent_folder_id: str) -> list[st
                 ).execute()
             uploaded.append(result["id"])
     return uploaded
+
+
+def upload_file(service, source: str | Path, parent_folder_id: str) -> str:
+    """Create or replace one file directly under a shared Drive folder."""
+    from googleapiclient.http import MediaFileUpload
+
+    path = Path(source)
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    escaped = path.name.replace("'", "\\'")
+    matches = service.files().list(
+        q=f"'{parent_folder_id}' in parents and name = '{escaped}' and trashed = false",
+        fields="files(id)",
+        pageSize=100,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute().get("files", [])
+    media = MediaFileUpload(
+        str(path), mimetype=mimetypes.guess_type(path.name)[0] or "application/octet-stream",
+        resumable=True,
+    )
+    if matches:
+        result = service.files().update(
+            fileId=matches[0]["id"], media_body=media,
+            supportsAllDrives=True, fields="id",
+        ).execute()
+    else:
+        result = service.files().create(
+            body={"name": path.name, "parents": [parent_folder_id]},
+            media_body=media, supportsAllDrives=True, fields="id",
+        ).execute()
+    return result["id"]
