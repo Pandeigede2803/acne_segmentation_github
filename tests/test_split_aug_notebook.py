@@ -2,6 +2,7 @@
 
 import ast
 import json
+import random
 import unittest
 from pathlib import Path
 
@@ -31,9 +32,15 @@ class SplitAugNotebookTests(unittest.TestCase):
                                 and "".join(cell["source"]).startswith("## 31c."))
         cls.report_markdown = "".join(cells[cls.report_index]["source"])
         cls.report_code = "".join(cells[cls.report_index + 1]["source"])
+        cls.low_cost_index = next(i for i, cell in enumerate(cells)
+                                  if cell["cell_type"] == "markdown"
+                                  and "".join(cell["source"]).startswith("## 31d."))
+        cls.low_cost_markdown = "".join(cells[cls.low_cost_index]["source"])
+        cls.low_cost_code = "".join(cells[cls.low_cost_index + 1]["source"])
         ast.parse(cls.prep_code)
         ast.parse(cls.train_code)
         ast.parse(cls.report_code)
+        ast.parse(cls.low_cost_code)
 
     def test_step_31_is_preprocessing_only(self):
         self.assertIn("RUN_SPLIT_AUG = False", self.prep_code)
@@ -118,6 +125,38 @@ class SplitAugNotebookTests(unittest.TestCase):
         self.assertIn("training_curves.png", self.report_code)
         self.assertIn("train_test_comparison.png", self.report_code)
         self.assertIn("test_confusion_matrix.png", self.report_code)
+
+    def test_step_31d_uses_validation_macro_f1_and_keeps_test_out_of_selection(self):
+        for expected in ("RUN_LOW_COST_EXPERIMENT = False", "LOW_COST_PHASE1_EPOCHS = 30",
+                         "LOW_COST_PHASE2_EPOCHS = 20", "LOW_COST_PATIENCE = 5",
+                         "'val_macro_f1'", "if phase2 and stale_phase2 >= LOW_COST_PATIENCE",
+                         "selection_locked.json", "test_predictions.csv", "per_class_metrics.csv",
+                         "LOW_COST_CHECKPOINT_EVERY = 5"):
+            self.assertIn(expected, self.low_cost_code)
+        self.assertIn("low_cost_split(original_train", self.low_cost_code)
+        self.assertIn("source_test != augmented_test", self.low_cost_code)
+        self.assertIn("fixed_splits != output_fixed", self.low_cost_code)
+        self.assertIn("set_encoder_trainable(phase2)", self.low_cost_code)
+        self.assertIn("terpisah dari `fresh_01`", self.low_cost_markdown)
+        self.assertNotIn("scripts/train_proposal_hybrid_resnet50_malds.py", self.low_cost_code.split("trainer_path =", 1)[0])
+
+    def test_step_31d_stratified_split_is_reproducible_and_disjoint(self):
+        tree = ast.parse(self.low_cost_code)
+        split_function = next(node for node in tree.body
+                              if isinstance(node, ast.FunctionDef) and node.name == "low_cost_split")
+        module = ast.Module(body=[split_function], type_ignores=[])
+        namespace = {"random": random}
+        exec(compile(module, "step31d_split", "exec"), namespace)
+        rows = [{"filename": f"class{label}_{i}.jpg", "label_index": str(label), "split": "train"}
+                for label in range(4) for i in range(10)]
+        train, val, grouping = namespace["low_cost_split"](rows, ["filename", "label_index", "split"], 42)
+        self.assertEqual((len(train), len(val)), (32, 8))
+        self.assertEqual(grouping, "image_level_no_patient_id")
+        self.assertFalse({r["filename"] for r in train} & {r["filename"] for r in val})
+        self.assertEqual([sum(int(r["label_index"]) == c for r in val) for c in range(4)], [2, 2, 2, 2])
+        train2, val2, _ = namespace["low_cost_split"](rows, ["filename", "label_index", "split"], 42)
+        self.assertEqual([r["filename"] for r in train], [r["filename"] for r in train2])
+        self.assertEqual([r["filename"] for r in val], [r["filename"] for r in val2])
 
     def test_trainer_supports_no_validation(self):
         source = TRAINER.read_text(encoding="utf-8")
