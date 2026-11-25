@@ -26,8 +26,14 @@ class SplitAugNotebookTests(unittest.TestCase):
         cls.prep_code = "".join(cells[cls.prep_index + 1]["source"])
         cls.train_markdown = "".join(cells[cls.train_index]["source"])
         cls.train_code = "".join(cells[cls.train_index + 1]["source"])
+        cls.report_index = next(i for i, cell in enumerate(cells)
+                                if cell["cell_type"] == "markdown"
+                                and "".join(cell["source"]).startswith("## 31c."))
+        cls.report_markdown = "".join(cells[cls.report_index]["source"])
+        cls.report_code = "".join(cells[cls.report_index + 1]["source"])
         ast.parse(cls.prep_code)
         ast.parse(cls.train_code)
+        ast.parse(cls.report_code)
 
     def test_step_31_is_preprocessing_only(self):
         self.assertIn("RUN_SPLIT_AUG = False", self.prep_code)
@@ -97,6 +103,21 @@ class SplitAugNotebookTests(unittest.TestCase):
         self.assertNotIn("if str(SPLIT_AUG_SOURCE_RUN).startswith('/content/drive/') and not Path('/content/drive/MyDrive').is_dir():\n        from google.colab import drive", self.train_code)
         self.assertIn("TRAINING_RUN_ID", self.train_code)
         self.assertIn("find_folder(DRIVE_API", self.train_code)
+
+    def test_step_31c_fails_closed_on_mixed_run_artifacts(self):
+        self.assertIn("RUN_STEP31B_REPORT = False", self.report_code)
+        self.assertIn("len(metric_candidates) != 1", self.report_code)
+        self.assertIn("plan_sha256", self.report_code)
+        self.assertIn("augmented_manifest_sha256", self.report_code)
+        self.assertIn("trainer_sha256", self.report_code)
+        self.assertIn("checkpoint.get('history') != history", self.report_code)
+        self.assertIn("checkpoint_args.get('manifest')", self.report_code)
+        self.assertIn("REPORT_DIR = REPORT_RUN_DIR / 'evaluation_report'", self.report_code)
+        self.assertNotIn("best_model.pt", self.report_code)
+        self.assertIn("test_predictions.csv", self.report_code)
+        self.assertIn("training_curves.png", self.report_code)
+        self.assertIn("train_test_comparison.png", self.report_code)
+        self.assertIn("test_confusion_matrix.png", self.report_code)
 
     def test_trainer_supports_no_validation(self):
         source = TRAINER.read_text(encoding="utf-8")
