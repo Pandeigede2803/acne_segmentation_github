@@ -15,6 +15,15 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def step28_cells():
+    """Locate Step 28 by heading so later notebook steps do not break the test."""
+    cells = json.loads((ROOT / 'acne_colab.ipynb').read_text())['cells']
+    index = next(i for i, cell in enumerate(cells)
+                 if cell['cell_type'] == 'markdown'
+                 and ''.join(cell['source']).startswith('## 28.'))
+    return cells[index], cells[index + 1]
+
+
 class MetricTests(unittest.TestCase):
     def test_perfect(self):
         result = MODULE.classification_metrics([[int(i == j) for j in range(4)] for i in range(4)])
@@ -35,17 +44,16 @@ class MetricTests(unittest.TestCase):
         self.assertEqual(result['macro_f1'], 0)
 
     def test_notebook_step28_code_is_valid_and_training_off(self):
-        notebook = json.loads((ROOT / 'acne_colab.ipynb').read_text())
-        self.assertTrue(''.join(notebook['cells'][-3]['source']).startswith('## 28.'))
-        config_source = ''.join(notebook['cells'][-2]['source'])
+        markdown, config = step28_cells()
+        self.assertTrue(''.join(markdown['source']).startswith('## 28.'))
+        config_source = ''.join(config['source'])
         self.assertIn('RUN_FT_CONTROL = False', config_source)
         self.assertIn('RUN_FT_LAYER4 = False', config_source)
-        for cell in notebook['cells'][-2:]:
-            ast.parse(''.join(cell['source']))
+        ast.parse(config_source)
 
     def run_log_fixture(self, root, fail=False):
-        notebook = json.loads((ROOT / 'acne_colab.ipynb').read_text())
-        source = ''.join(notebook['cells'][-2]['source'])
+        _, config = step28_cells()
+        source = ''.join(config['source'])
         source = source.replace('RUN_FT_CONTROL = False', 'RUN_FT_CONTROL = True')
         source = source.replace('FT_DOWNLOAD = True', 'FT_DOWNLOAD = False')
         source = source.replace('FT_RESUME = True', 'FT_RESUME = False')
@@ -108,7 +116,8 @@ class MetricTests(unittest.TestCase):
     def test_notebook_resume_appends_log_and_passes_resume_flag(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            source = ''.join(json.loads((ROOT / 'acne_colab.ipynb').read_text())['cells'][-2]['source'])
+            _, config = step28_cells()
+            source = ''.join(config['source'])
             source = source.replace('RUN_FT_CONTROL = False', 'RUN_FT_CONTROL = True')
             source = source.replace('FT_DOWNLOAD = True', 'FT_DOWNLOAD = False')
             source = source.replace('FT_SEEDS = [42, 43, 44]', 'FT_SEEDS = [42]')
