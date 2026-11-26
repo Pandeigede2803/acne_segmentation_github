@@ -473,6 +473,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--panel-size", type=int, default=320)
     parser.add_argument("--write-grids", action="store_true",
                         help="Also write one 4-panel grid per image")
+    parser.add_argument("--no-overlays", action="store_true",
+                        help="Skip per-image V2 overlay PNGs (useful for full datasets)")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
 
@@ -492,8 +494,8 @@ def validate_args(args: argparse.Namespace) -> tuple[str, ...]:
         raise ValueError("Morphology kernel must be 1 or a positive odd integer.")
     if args.min_valid_pixels < 1:
         raise ValueError("min-valid-pixels minimal 1.")
-    if args.per_level < 0 or args.max_images < 0 or args.grid_samples < 1:
-        raise ValueError("Require per-level >= 0, max-images >= 0, grid-samples >= 1.")
+    if args.per_level < 0 or args.max_images < 0 or args.grid_samples < 0:
+        raise ValueError("Require per-level >= 0, max-images >= 0, grid-samples >= 0.")
     if args.panel_size < 128:
         raise ValueError("panel-size minimal 128.")
     levels = tuple(level.strip() for level in args.levels.split(",") if level.strip())
@@ -645,7 +647,9 @@ def main() -> None:
         overlay_path = overlay_out / f"{stem}.png"
         if not cv2.imwrite(str(v2_path), final_union):
             raise OSError(f"Could not write mask: {v2_path}")
-        if not cv2.imwrite(str(overlay_path), mask_overlay(image, final_union, (0, 220, 0))):
+        if args.no_overlays:
+            overlay_path = ""
+        elif not cv2.imwrite(str(overlay_path), mask_overlay(image, final_union, (0, 220, 0))):
             raise OSError(f"Could not write overlay: {overlay_path}")
 
         circle_area = int(np.count_nonzero(circle_union))
@@ -673,7 +677,7 @@ def main() -> None:
             "circle_mask": str(circle_path.resolve()),
             "v1_mask": str(v1_path.resolve()),
             "v2_mask": str(v2_path.resolve()),
-            "overlay_path": str(overlay_path.resolve()),
+            "overlay_path": str(overlay_path.resolve()) if overlay_path else "",
         })
         manifest_out_rows.append({
             "filename": fname, "label_name": label_name,
@@ -689,19 +693,25 @@ def main() -> None:
             "resize_mode": "letterbox", "preprocessing_mode": "none",
         })
 
-        grid = comparison_row(image, circle_union, v1_mask, final_union,
-                              title=title, stats=stats, panel_size=args.panel_size)
+        grid = None
         if args.write_grids:
+            grid = comparison_row(image, circle_union, v1_mask, final_union,
+                                  title=title, stats=stats, panel_size=args.panel_size)
             if not cv2.imwrite(str(grids_out / f"{stem}.png"), grid):
                 raise OSError(f"Could not write comparison grid for {fname}")
-        grid_rows.append((entry["label_name"], fname, grid))
+        elif len(grid_rows) < args.grid_samples:
+            grid = comparison_row(image, circle_union, v1_mask, final_union,
+                                  title=title, stats=stats, panel_size=args.panel_size)
+        if grid is not None and args.grid_samples > 0:
+            grid_rows.append((entry["label_name"], fname, grid))
         if index % 25 == 0:
             print(f"processed {index}/{len(selected)}", flush=True)
 
-    ordered_grids = sorted(grid_rows, key=lambda item: (item[0] != args.grid_focus, item[0], item[1]))
-    montage = build_montage([item[2] for item in ordered_grids[:args.grid_samples]])
-    if not cv2.imwrite(str(args.output_dir / "comparison_grid.png"), montage):
-        raise OSError("Could not write comparison_grid.png")
+    if grid_rows and args.grid_samples > 0:
+        ordered_grids = sorted(grid_rows, key=lambda item: (item[0] != args.grid_focus, item[0], item[1]))
+        montage = build_montage([item[2] for item in ordered_grids[:args.grid_samples]])
+        if not cv2.imwrite(str(args.output_dir / "comparison_grid.png"), montage):
+            raise OSError("Could not write comparison_grid.png")
 
     summary = summarize_classes(image_rows, annotation_rows)
     write_csv(args.output_dir / "audit_per_image.csv", AUDIT_IMAGE_FIELDS, image_rows)
@@ -727,6 +737,7 @@ def main() -> None:
         "min_valid_pixels": args.min_valid_pixels,
         "min_candidate_ratio": args.min_candidate_ratio,
         "morph_kernel": args.morph_kernel,
+        "no_overlays": bool(args.no_overlays),
         "v1_control": {"sigma": V1_SIGMA, "morph_kernel": V1_MORPH_KERNEL,
                        "min_candidate_ratio": V1_MIN_RATIO},
         "skin_map": {"cr": list(SKIN_CR), "cb": list(SKIN_CB), "v_min": SKIN_V_MIN,
@@ -765,7 +776,8 @@ def main() -> None:
     print("Masks exactly unchanged from circle union:",
           ", ".join(unchanged) if unchanged else "none")
     print("Audit:", (args.output_dir / "audit_report.md").resolve())
-    print("Grid :", (args.output_dir / "comparison_grid.png").resolve())
+    if (args.output_dir / "comparison_grid.png").is_file():
+        print("Grid :", (args.output_dir / "comparison_grid.png").resolve())
 
 
 if __name__ == "__main__":

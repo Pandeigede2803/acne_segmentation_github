@@ -1,5 +1,3 @@
-"""Static and helper tests for the Step 34 mask-refinement audit (V1 vs V2)."""
-
 import ast
 import json
 import random
@@ -41,14 +39,14 @@ class MaskRefinementV2ScriptTests(unittest.TestCase):
         self.assertIn("fallback_reason", self.source)
         self.assertIn("annulus_skin", self.source)
         self.assertIn("Refusing to overwrite existing output folder", self.source)
+        self.assertIn("annotation_outside_image", self.source)
+        self.assertIn("out_of_bounds_annotations", self.source)
 
     def test_grid_and_selection_options_exist(self):
         for expected in ("--per-level", "--split", "--levels", "--write-grids",
                          "--grid-samples", "--grid-focus", "--manifest",
                          "--min-valid-pixels"):
             self.assertIn(expected, self.source)
-        self.assertIn("annotation_outside_image", self.source)
-        self.assertIn("out_of_bounds_annotations", self.source)
 
     def test_selection_is_stratified_deterministic_and_split_aware(self):
         function = next(node for node in self.tree.body
@@ -80,53 +78,83 @@ class MaskRefinementV2NotebookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
-        index = next(i for i, cell in enumerate(cells)
-                     if cell["cell_type"] == "markdown"
-                     and "".join(cell["source"]).startswith("---\n## 34. "))
-        cls.markdown = "".join(cells[index]["source"])
-        cls.code = "".join(cells[index + 1]["source"])
-        ast.parse(cls.code)
 
-    def test_step_34_is_preprocessing_audit_only(self):
-        self.assertIn("RUN_MASK_REFINEMENT_V2 = False", self.code)
-        self.assertIn("TANPA TRAINING", self.markdown)
-        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", self.code)
-        self.assertNotIn("--no-validation", self.code)
-        self.assertNotIn("--resume", self.code)
+        def heading(prefix):
+            return next(i for i, cell in enumerate(cells)
+                        if cell["cell_type"] == "markdown"
+                        and "".join(cell["source"]).startswith(f"---\n## {prefix} "))
 
-    def test_reads_step_31_outputs_and_writes_new_folder(self):
-        self.assertIn("Jalankan Step 31 dulu", self.code)
-        self.assertIn("preprocess_512", self.code)
-        self.assertIn("manifest_split.csv", self.code)
-        self.assertIn("experiments_512_mask_v2", self.code)
-        self.assertIn("MASK_V2_SOURCE_BASE", self.code)
+        cls.config_index = heading("34.")
+        cls.validate_index = heading("34a.")
+        cls.run_index = heading("34b.")
+        cls.report_index = heading("34c.")
+        cls.markdown = {
+            "config": "".join(cells[cls.config_index]["source"]),
+            "validate": "".join(cells[cls.validate_index]["source"]),
+            "run": "".join(cells[cls.run_index]["source"]),
+            "report": "".join(cells[cls.report_index]["source"]),
+        }
+        cls.code = {
+            "config": "".join(cells[cls.config_index + 1]["source"]),
+            "validate": "".join(cells[cls.validate_index + 1]["source"]),
+            "run": "".join(cells[cls.run_index + 1]["source"]),
+            "report": "".join(cells[cls.report_index + 1]["source"]),
+        }
+        for source in cls.code.values():
+            ast.parse(source)
+        assert cls.config_index < cls.validate_index < cls.run_index < cls.report_index
 
-    def test_shows_v1_vs_v2_grid_and_audit(self):
-        self.assertIn("comparison_grid.png", self.code)
-        self.assertIn("audit_per_class.csv", self.code)
-        self.assertIn("refine_masks_color_v2.py", self.code)
-        self.assertIn("--write-grids", self.code)
-        self.assertIn("--per-level", self.code)
-        self.assertIn("--split", self.code)
+    def test_step_34_is_split_into_four_focused_cells(self):
+        self.assertIn("Empat sub-step", self.markdown["config"])
+        for name in ("config", "validate", "run", "report"):
+            self.assertIn("TANPA TRAINING", self.markdown[name].upper())
+        self.assertIn("RUN_MASK_REFINEMENT_V2 = False", self.code["run"])
+        self.assertIn("subprocess.run(MASK_V2_COMMAND", self.code["run"])
+        for name in ("config", "validate", "report"):
+            self.assertNotIn("subprocess.run(MASK_V2_COMMAND", self.code[name])
+        for name in ("config", "validate", "run", "report"):
+            self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", self.code[name])
+            self.assertNotIn("--no-validation", self.code[name])
+            self.assertNotIn("--resume", self.code[name])
+
+    def test_validation_reads_step_31_and_prepares_command(self):
+        self.assertIn("Jalankan Step 31 dulu", self.code["validate"])
+        self.assertIn("preprocess_512", self.code["validate"])
+        self.assertIn("manifest_split.csv", self.code["validate"])
+        self.assertIn("experiments_512_mask_v2", self.code["validate"])
+        self.assertIn("MASK_V2_SOURCE_BASE", self.code["validate"])
+        self.assertIn("MASK_V2_COMMAND", self.code["validate"])
+        self.assertIn("MASK_V2_READY = True", self.code["validate"])
+        self.assertIn("Jalankan Step 34 dulu", self.code["validate"])
+
+    def test_report_shows_v1_vs_v2_grid_and_audit(self):
+        self.assertIn("comparison_grid.png", self.code["report"])
+        self.assertIn("audit_per_class.csv", self.code["report"])
+        self.assertIn("display(Image(", self.code["report"])
+        self.assertIn("refine_masks_color_v2.py", self.code["validate"])
+        self.assertIn("--write-grids", self.code["validate"])
+        self.assertIn("--per-level", self.code["validate"])
+        self.assertIn("--split", self.code["validate"])
+        self.assertIn("Jalankan Step 34b dulu", self.code["report"])
 
     def test_missing_temporary_annotation_is_recovered_and_verified(self):
         for expected in ("MASK_V2_ANNOTATIONS", "MASK_V2_IMAGE_DIR",
                          "V2_ANNOT_SHA256", "mask_v2_resolve_annotation",
                          "mask_v2_resolve_image_dir", "Acne04-v2_annotations.json"):
-            self.assertIn(expected, self.code)
-        self.assertIn("SHA-256", self.code)
+            self.assertIn(expected, self.code["config"])
+        self.assertIn("SHA-256", self.code["config"])
 
     def test_small_lesion_defaults_are_audit_friendly(self):
-        self.assertIn("MASK_V2_MIN_VALID_PIXELS = 10", self.code)
-        self.assertIn("MASK_V2_ANNULUS_FACTOR = 3.0", self.code)
-        self.assertIn("MASK_V2_MORPH_KERNEL = 1", self.code)
-        self.assertIn("--min-valid-pixels", self.code)
-        self.assertIn("required_v2_flags = ('--per-level', '--min-valid-pixels', '--annulus-radius-factor')", self.code)
+        self.assertIn("MASK_V2_MIN_VALID_PIXELS = 10", self.code["config"])
+        self.assertIn("MASK_V2_ANNULUS_FACTOR = 3.0", self.code["config"])
+        self.assertIn("MASK_V2_MORPH_KERNEL = 1", self.code["config"])
+        self.assertIn("--min-valid-pixels", self.code["validate"])
+        self.assertIn("required_v2_flags = ('--per-level', '--min-valid-pixels', '--annulus-radius-factor')", self.code["validate"])
 
     def test_reuses_existing_output_only_with_matching_provenance(self):
-        self.assertIn("provenance.json", self.code)
-        self.assertIn("v2_local_annulus", self.code)
-        self.assertIn("Ganti MASK_V2_RUN_NAME", self.code)
+        self.assertIn("provenance.json", self.code["validate"])
+        self.assertIn("v2_local_annulus", self.code["validate"])
+        self.assertIn("Ganti MASK_V2_RUN_NAME", self.code["validate"])
 
 
 if __name__ == "__main__":

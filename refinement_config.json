@@ -1,0 +1,62 @@
+{
+  "variant": "v2_local_annulus",
+  "objective": "audit pseudo-mask candidate without training",
+  "candidate": "local Lab median/MAD plus V1 CLI-default HSV candidates",
+  "target_size": 512,
+  "resize_mode": "letterbox",
+  "crop_ratio": 1.0,
+  "jpeg_quality": 95,
+  "sigma": 1.2,
+  "annulus_radius_factor": 3.0,
+  "min_valid_pixels": 10,
+  "min_candidate_ratio": 0.02,
+  "morph_kernel": 1,
+  "v1_control": {
+    "sigma": 1.2,
+    "morph_kernel": 5,
+    "min_candidate_ratio": 0.02
+  },
+  "skin_map": {
+    "cr": [
+      133,
+      180
+    ],
+    "cb": [
+      77,
+      133
+    ],
+    "v_min": 30,
+    "morph": 5,
+    "use": "annulus sampling only"
+  },
+  "selection": {
+    "manifest": "/content/drive/MyDrive/acne_project/output/experiments_512/split_aug1000_img512_v1/split_60_40/manifest_split.csv",
+    "manifest_sha256": "58b4606da5a19f16702316c165e6e8f8beac73ad20648c5087b3a9d09042f6e2",
+    "split": "train",
+    "levels": [
+      "levle3",
+      "levle2",
+      "levle1",
+      "levle0"
+    ],
+    "per_level": 3,
+    "seed": 42,
+    "max_images": 0,
+    "images": [
+      "levle0_203.jpg",
+      "levle0_314.jpg",
+      "levle0_92.jpg",
+      "levle1_475.jpg",
+      "levle1_529.jpg",
+      "levle1_607.jpg",
+      "levle2_108.jpg",
+      "levle2_150.jpg",
+      "levle2_69.jpg",
+      "levle3_102.jpg",
+      "levle3_115.jpg",
+      "levle3_132.jpg"
+    ]
+  },
+  "fallback_note": "Annotations below the candidate-area threshold retain the original circle; inspect fallback_annotations and unchanged_vs_circle_union.",
+  "warning": "Exploratory pseudo-mask candidate, not clinical ground truth. Do not tune with the test set."
+}
