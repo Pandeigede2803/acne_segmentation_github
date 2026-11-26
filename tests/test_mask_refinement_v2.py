@@ -44,8 +44,11 @@ class MaskRefinementV2ScriptTests(unittest.TestCase):
 
     def test_grid_and_selection_options_exist(self):
         for expected in ("--per-level", "--split", "--levels", "--write-grids",
-                         "--grid-samples", "--grid-focus", "--manifest"):
+                         "--grid-samples", "--grid-focus", "--manifest",
+                         "--min-valid-pixels"):
             self.assertIn(expected, self.source)
+        self.assertIn("annotation_outside_image", self.source)
+        self.assertIn("out_of_bounds_annotations", self.source)
 
     def test_selection_is_stratified_deterministic_and_split_aware(self):
         function = next(node for node in self.tree.body
@@ -105,6 +108,20 @@ class MaskRefinementV2NotebookTests(unittest.TestCase):
         self.assertIn("--write-grids", self.code)
         self.assertIn("--per-level", self.code)
         self.assertIn("--split", self.code)
+
+    def test_missing_temporary_annotation_is_recovered_and_verified(self):
+        for expected in ("MASK_V2_ANNOTATIONS", "MASK_V2_IMAGE_DIR",
+                         "V2_ANNOT_SHA256", "mask_v2_resolve_annotation",
+                         "mask_v2_resolve_image_dir", "Acne04-v2_annotations.json"):
+            self.assertIn(expected, self.code)
+        self.assertIn("SHA-256", self.code)
+
+    def test_small_lesion_defaults_are_audit_friendly(self):
+        self.assertIn("MASK_V2_MIN_VALID_PIXELS = 10", self.code)
+        self.assertIn("MASK_V2_ANNULUS_FACTOR = 3.0", self.code)
+        self.assertIn("MASK_V2_MORPH_KERNEL = 1", self.code)
+        self.assertIn("--min-valid-pixels", self.code)
+        self.assertIn("required_v2_flags = ('--per-level', '--min-valid-pixels', '--annulus-radius-factor')", self.code)
 
     def test_reuses_existing_output_only_with_matching_provenance(self):
         self.assertIn("provenance.json", self.code)

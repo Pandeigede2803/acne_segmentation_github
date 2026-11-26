@@ -59,7 +59,7 @@ LEVELS = ("levle0", "levle1", "levle2", "levle3")
 
 AUDIT_IMAGE_FIELDS = [
     "filename", "label_name", "label_index", "split", "annotations",
-    "fallback_annotations", "lost_annotations", "circle_area_px",
+    "fallback_annotations", "lost_annotations", "out_of_bounds_annotations", "circle_area_px",
     "v1_area_px", "v2_area_px", "v1_circle_proxy_iou", "v2_circle_proxy_iou",
     "v1_fallback", "v2_unchanged_vs_circle_union", "image_path",
     "preprocessed_path", "circle_mask", "v1_mask", "v2_mask", "overlay_path",
@@ -138,14 +138,29 @@ def refine_annotation(
     sigma: float,
     min_candidate_ratio: float,
     morph_kernel: int,
+    min_valid_pixels: int = MIN_VALID_PIXELS,
 ) -> tuple[np.ndarray, dict]:
+    circle_area = int(np.count_nonzero(circle))
+    if circle_area == 0:
+        return circle.copy(), {
+            "baseline_source": "outside_image",
+            "annulus_pixels": 0,
+            "sample_pixels": 0,
+            "threshold_lab_a": "",
+            "candidate_area_px": 0,
+            "candidate_ratio": 0.0,
+            "final_area_px": 0,
+            "retained_area_ratio": 0.0,
+            "fallback": 1,
+            "fallback_reason": "annotation_outside_image",
+        }
+
     ring = (outer > 0) & (circle == 0) & (circle_union == 0) & (content > 0)
     skin_samples = lab_a[ring & (skin > 0)]
-    samples = skin_samples if skin_samples.size >= MIN_VALID_PIXELS else lab_a[ring]
-    baseline = "annulus_skin" if skin_samples.size >= MIN_VALID_PIXELS else "annulus_without_skin"
-    circle_area = int(np.count_nonzero(circle))
+    samples = skin_samples if skin_samples.size >= min_valid_pixels else lab_a[ring]
+    baseline = "annulus_skin" if skin_samples.size >= min_valid_pixels else "annulus_without_skin"
 
-    if samples.size < MIN_VALID_PIXELS:
+    if samples.size < min_valid_pixels:
         return circle.copy(), {
             "baseline_source": baseline,
             "annulus_pixels": int(ring.sum()),
@@ -312,7 +327,7 @@ def summarize_classes(image_rows: list[dict], annotation_rows: list[dict]) -> li
         rows = grouped[label]
         anns = [ann for row in rows for ann in annotations_by_file.get(row["filename"], [])]
         retention = [float(ann["retained_area_ratio"]) for ann in anns
-                     if ann["fallback_reason"] != "annulus_has_too_few_valid_pixels"]
+                     if not int(ann["fallback"])]
         ious = [float(row["v2_circle_proxy_iou"]) for row in rows]
         v1_ious = [float(row["v1_circle_proxy_iou"]) for row in rows]
         summary.append({
@@ -322,6 +337,7 @@ def summarize_classes(image_rows: list[dict], annotation_rows: list[dict]) -> li
             "annotations": len(anns),
             "fallback_annotations": sum(int(ann["fallback"]) for ann in anns),
             "lost_annotations": sum(int(ann["final_area_px"]) == 0 for ann in anns),
+            "out_of_bounds_annotations": sum(int(ann["circle_area_px"]) == 0 for ann in anns),
             "fallback_rate": f"{(sum(int(ann['fallback']) for ann in anns) / max(len(anns), 1)):.4f}",
             "median_retention_v2": f"{statistics.median(retention):.4f}" if retention else "",
             "iqr_low_retention_v2": f"{float(np.percentile(retention, 25)):.4f}" if retention else "",
@@ -366,6 +382,7 @@ def write_report(
         f"- V2 morphology: {args.morph_kernel}x{args.morph_kernel}",
         f"- V2 min candidate ratio: {args.min_candidate_ratio}",
         f"- V2 annulus radius factor: {args.annulus_radius_factor}",
+        f"- V2 minimum valid annulus pixels: {args.min_valid_pixels}",
         f"- V1 control: sigma {V1_SIGMA}, kernel {V1_MORPH_KERNEL}x{V1_MORPH_KERNEL}, ratio {V1_MIN_RATIO}",
         f"- Seed: {args.seed}",
         f"- Seleksi: split={selection['split'] or 'semua'}, level={selection['levels'] or 'semua'}, "
@@ -374,24 +391,27 @@ def write_report(
         "",
         "## Ringkasan per kelas",
         "",
-        "| Kelas | Citra | Anotasi | Fallback | Hilang | Median retention V2 | Median IoU V1* | Median IoU V2* |",
-        "|---|---|---|---|---|---|---|---|",
+        "| Kelas | Citra | Anotasi | Fallback | Hilang | Di luar gambar | Median retention V2* | Median IoU V1** | Median IoU V2** |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for row in summary:
         lines.append(
             f"| {row['label_name']} | {row['images']} | {row['annotations']} | "
             f"{row['fallback_annotations']} | {row['lost_annotations']} | "
+            f"{row['out_of_bounds_annotations']} | "
             f"{row['median_retention_v2']} | {row['median_v1_circle_iou']} | "
             f"{row['median_v2_circle_iou']} |"
         )
     lines += [
         "",
-        "*IoU dihitung terhadap circle union anotasi sebagai proxy, bukan akurasi klinis.",
+        "*Retention hanya dari anotasi non-fallback; fallback circle tidak dihitung sebagai refinement.",
+        "**IoU dihitung terhadap circle union anotasi sebagai proxy, bukan akurasi klinis.",
         "",
         "## Temuan",
         "",
         f"- Anotasi fallback: {len(fallback_rows)} dari {len(annotation_rows)}.",
-        f"- Anotasi hilang: {len(lost_rows)} (V2 tidak boleh menghapus anotasi diam-diam).",
+        f"- Anotasi hilang: {len(lost_rows)} (termasuk anotasi di luar batas gambar).",
+        f"- Anotasi di luar batas gambar: {sum(int(row['circle_area_px']) == 0 for row in annotation_rows)}.",
         "- Fallback berarti V2 memakai circle anotasi; bukan bukti batas lesi yang benar.",
         "",
         "## Batasan",
@@ -443,6 +463,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--sigma", type=float, default=1.2)
     parser.add_argument("--annulus-radius-factor", type=float, default=2.0)
     parser.add_argument("--min-candidate-ratio", type=float, default=0.02)
+    parser.add_argument("--min-valid-pixels", type=int, default=MIN_VALID_PIXELS,
+                        help="Minimum annulus pixels for a local baseline")
     parser.add_argument("--morph-kernel", type=int, default=1)
     parser.add_argument("--grid-samples", type=int, default=9,
                         help="Rows in comparison_grid.png")
@@ -468,6 +490,8 @@ def validate_args(args: argparse.Namespace) -> tuple[str, ...]:
         raise ValueError("Require sigma > 0, annulus-radius-factor > 1, and min-candidate-ratio in (0, 1].")
     if args.morph_kernel < 1 or (args.morph_kernel > 1 and args.morph_kernel % 2 == 0):
         raise ValueError("Morphology kernel must be 1 or a positive odd integer.")
+    if args.min_valid_pixels < 1:
+        raise ValueError("min-valid-pixels minimal 1.")
     if args.per_level < 0 or args.max_images < 0 or args.grid_samples < 1:
         raise ValueError("Require per-level >= 0, max-images >= 0, grid-samples >= 1.")
     if args.panel_size < 128:
@@ -606,7 +630,7 @@ def main() -> None:
             final, info = refine_annotation(
                 lab_a, hsv, circle, outer, circle_union, content, skin,
                 sigma=args.sigma, min_candidate_ratio=args.min_candidate_ratio,
-                morph_kernel=args.morph_kernel,
+                morph_kernel=args.morph_kernel, min_valid_pixels=args.min_valid_pixels,
             )
             final_union = cv2.bitwise_or(final_union, final)
             record = {"filename": fname, "label_name": label_name,
@@ -629,6 +653,7 @@ def main() -> None:
         v2_area = int(np.count_nonzero(final_union))
         fallback_count = sum(int(row["fallback"]) for row in this_annotations)
         lost_count = sum(int(row["final_area_px"]) == 0 for row in this_annotations)
+        out_of_bounds = sum(int(row["circle_area_px"]) == 0 for row in this_annotations)
         stats = f"V2 \u00b7 fallback {fallback_count}/{len(this_annotations)} \u00b7 area {v2_area}/{circle_area}"
         title = f"{fname} | {label_name} | {entry['split'] or 'split?'}"
 
@@ -637,6 +662,7 @@ def main() -> None:
             "label_index": v1.LABEL_TO_INDEX.get(label_name, -1),
             "split": entry["split"], "annotations": len(this_annotations),
             "fallback_annotations": fallback_count, "lost_annotations": lost_count,
+            "out_of_bounds_annotations": out_of_bounds,
             "circle_area_px": circle_area, "v1_area_px": v1_area, "v2_area_px": v2_area,
             "v1_circle_proxy_iou": f"{v1_area / max(circle_area, 1):.8f}",
             "v2_circle_proxy_iou": f"{v2_area / max(circle_area, 1):.8f}",
@@ -659,6 +685,7 @@ def main() -> None:
             "n_circles": len(annotations), "circle_area": circle_area,
             "refined_area": v2_area, "v1_area": v1_area,
             "fallback_annotations": fallback_count, "lost_annotations": lost_count,
+            "out_of_bounds_annotations": out_of_bounds,
             "resize_mode": "letterbox", "preprocessing_mode": "none",
         })
 
@@ -697,7 +724,7 @@ def main() -> None:
         "target_size": TARGET_SIZE, "resize_mode": "letterbox", "crop_ratio": 1.0,
         "jpeg_quality": 95, "sigma": args.sigma,
         "annulus_radius_factor": args.annulus_radius_factor,
-        "min_valid_pixels": MIN_VALID_PIXELS,
+        "min_valid_pixels": args.min_valid_pixels,
         "min_candidate_ratio": args.min_candidate_ratio,
         "morph_kernel": args.morph_kernel,
         "v1_control": {"sigma": V1_SIGMA, "morph_kernel": V1_MORPH_KERNEL,
