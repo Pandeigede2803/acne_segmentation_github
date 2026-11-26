@@ -74,15 +74,15 @@ class MaskPipelineNotebookTests(unittest.TestCase):
 
     def test_steps_exist_and_parse(self):
         indexes = [self.heading(prefix) for prefix in
-                   ("35.", "36.", "37.", "38.", "39.", "40.", "40a.", "41.")]
+                   ("35.", "36.", "37.", "38.", "39.", "39a.", "40.", "40a.", "41.")]
         self.assertEqual(indexes, sorted(indexes))
-        for prefix in ("35.", "36.", "37.", "38.", "39.", "40.", "40a.", "41."):
+        for prefix in ("35.", "36.", "37.", "38.", "39.", "39a.", "40.", "40a.", "41."):
             ast.parse(self.code(prefix))
 
     def test_preprocessing_steps_are_not_training(self):
-        for prefix in ("35.", "36.", "37.", "38.", "39."):
+        for prefix in ("35.", "36.", "37.", "38.", "39.", "39a."):
             code = self.code(prefix)
-            self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", code)
+            self.assertNotIn("--phase1-epochs", code)
             self.assertNotIn("--phase1-epochs", code)
             self.assertNotIn("--phase2-epochs", code)
 
@@ -126,15 +126,31 @@ class MaskPipelineNotebookTests(unittest.TestCase):
         self.assertIn("--no-validation", code)
         self.assertIn("--skip-test-eval", code)
         self.assertIn("manifest_final.csv", code)
-        self.assertIn("Jalankan Step 39 dulu", code)
+        self.assertIn("Jalankan Step 39/39a dulu", code)
         self.assertIn("fetch_mask_v2_script('train_proposal_hybrid_resnet50_malds.py', force=True)", code)
         self.assertIn("required_trainer_flags", code)
+        self.assertIn("Drive belum ter-mount", code)
+        self.assertIn("FINAL_TRAIN_MANIFEST", code)
+        self.assertIn("has_validation", code)
+        self.assertIn("command.append('--no-validation')", code)
+
+    def test_step_39a_prepares_validation_and_augmented_train(self):
+        code = self.code("39a.")
+        self.assertIn("RUN_PREPARE_FINAL_TRAIN_39A = False", code)
+        self.assertIn("split_train_validation.py", code)
+        self.assertIn("augment_train_pairs_offline.py", code)
+        self.assertIn("--target-per-class", code)
+        self.assertIn("1000", code)
+        self.assertIn("FINAL_TRAIN_MANIFEST", code)
+        self.assertIn("TANPA TRAINING", self.markdown("39a."))
+        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", code)
 
     def test_step_40a_displays_training_table_without_training(self):
         code = self.code("40a.")
         self.assertIn("FINAL_TRAIN_METRICS", code)
         self.assertIn(".get('history', [])", code)
-        self.assertIn("train_columns", code)
+        self.assertIn("metric_columns", code)
+        self.assertIn("'val_'", code)
         self.assertIn("describe()", code)
         self.assertIn("checkpoint_selection", code)
         self.assertIn("select_training_run", code)
@@ -143,7 +159,7 @@ class MaskPipelineNotebookTests(unittest.TestCase):
         self.assertIn("last_checkpoint.pt", code)
         self.assertIn("Run terdeteksi", code)
         self.assertIn("TANPA TRAINING", self.markdown("40a."))
-        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", code)
+        self.assertNotIn("--phase1-epochs", code)
         self.assertNotIn("subprocess.run", code)
 
     def test_step_41_tests_the_locked_checkpoint(self):
@@ -157,9 +173,11 @@ class MaskPipelineNotebookTests(unittest.TestCase):
         self.assertIn("level3", code)
         self.assertIn("select_training_run", code)
         self.assertIn("TRAIN_STATUS", code)
+        self.assertIn("train_baseline_dilated_unet.py'", code)
+        self.assertIn("for dependency in ('train_proposal_hybrid_resnet50_malds.py'", code)
         self.assertIn("belum selesai", code)
         self.assertIn("TANPA TRAINING", self.markdown("41."))
-        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", code)
+        self.assertNotIn("--phase1-epochs", code)
 
 
 if __name__ == "__main__":
