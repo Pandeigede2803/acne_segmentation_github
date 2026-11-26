@@ -56,6 +56,9 @@ class FinalizeMaskScriptTests(unittest.TestCase):
         self.assertIn("Ukuran foto/mask berbeda", self.source)
 
 
+DOC = ROOT / "docs" / "MASK_VALIDATION_STEP34_41.md"
+
+
 class MaskPipelineNotebookTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -71,6 +74,15 @@ class MaskPipelineNotebookTests(unittest.TestCase):
 
     def markdown(self, prefix):
         return "".join(self.cells[self.heading(prefix)]["source"])
+
+    def test_documentation_covers_goals_and_steps(self):
+        self.assertTrue(DOC.is_file(), DOC)
+        text = DOC.read_text(encoding="utf-8")
+        for expected in ("Goal", "Step 34", "Step 39a", "Step 41",
+                         "Test lock", "Augmentasi wajib", "Troubleshooting"):
+            self.assertIn(expected, text)
+        notebook = "".join("".join(cell["source"]) for cell in self.cells if cell["cell_type"] == "markdown")
+        self.assertIn("MASK_VALIDATION_STEP34_41.md", notebook)
 
     def test_steps_exist_and_parse(self):
         indexes = [self.heading(prefix) for prefix in
@@ -126,13 +138,14 @@ class MaskPipelineNotebookTests(unittest.TestCase):
         self.assertIn("--no-validation", code)
         self.assertIn("--skip-test-eval", code)
         self.assertIn("manifest_final.csv", code)
-        self.assertIn("Jalankan Step 39/39a dulu", code)
+        self.assertIn("Jalankan Step 39 lalu Step 39a dulu", code)
         self.assertIn("fetch_mask_v2_script('train_proposal_hybrid_resnet50_malds.py', force=True)", code)
         self.assertIn("required_trainer_flags", code)
         self.assertIn("Drive belum ter-mount", code)
         self.assertIn("FINAL_TRAIN_MANIFEST", code)
-        self.assertIn("has_validation", code)
-        self.assertIn("command.append('--no-validation')", code)
+        self.assertIn("Jalankan Step 39 lalu Step 39a dulu", code)
+        self.assertIn("Manifest training tidak memiliki validation", code)
+        self.assertIn("target {target}/kelas", code)
 
     def test_step_39a_prepares_validation_and_augmented_train(self):
         code = self.code("39a.")
