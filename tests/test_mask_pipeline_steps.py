@@ -69,11 +69,14 @@ class MaskPipelineNotebookTests(unittest.TestCase):
     def code(self, prefix):
         return "".join(self.cells[self.heading(prefix) + 1]["source"])
 
+    def markdown(self, prefix):
+        return "".join(self.cells[self.heading(prefix)]["source"])
+
     def test_steps_exist_and_parse(self):
         indexes = [self.heading(prefix) for prefix in
-                   ("35.", "36.", "37.", "38.", "39.", "40.")]
+                   ("35.", "36.", "37.", "38.", "39.", "40.", "40a.", "41.")]
         self.assertEqual(indexes, sorted(indexes))
-        for prefix in ("35.", "36.", "37.", "38.", "39.", "40."):
+        for prefix in ("35.", "36.", "37.", "38.", "39.", "40.", "40a.", "41."):
             ast.parse(self.code(prefix))
 
     def test_preprocessing_steps_are_not_training(self):
@@ -126,6 +129,29 @@ class MaskPipelineNotebookTests(unittest.TestCase):
         self.assertIn("Jalankan Step 39 dulu", code)
         self.assertIn("fetch_mask_v2_script('train_proposal_hybrid_resnet50_malds.py', force=True)", code)
         self.assertIn("required_trainer_flags", code)
+
+    def test_step_40a_displays_training_table_without_training(self):
+        code = self.code("40a.")
+        self.assertIn("FINAL_TRAIN_METRICS", code)
+        self.assertIn("training_metrics.get('history'", code)
+        self.assertIn("train_columns", code)
+        self.assertIn("describe()", code)
+        self.assertIn("checkpoint_selection", code)
+        self.assertIn("TANPA TRAINING", self.markdown("40a."))
+        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", code)
+        self.assertNotIn("subprocess.run", code)
+
+    def test_step_41_tests_the_locked_checkpoint(self):
+        code = self.code("41.")
+        self.assertIn("RUN_FINAL_TEST_41 = False", code)
+        self.assertIn("infer_testing_images.py", code)
+        self.assertIn("testing_predictions.csv", code)
+        self.assertIn("classification_report.csv", code)
+        self.assertIn("confusion_matrix.png", code)
+        self.assertIn("--split', FINAL_TEST_SPLIT", code)
+        self.assertIn("level3", code)
+        self.assertIn("TANPA TRAINING", self.markdown("41."))
+        self.assertNotIn("train_proposal_hybrid_resnet50_malds.py", code)
 
 
 if __name__ == "__main__":
