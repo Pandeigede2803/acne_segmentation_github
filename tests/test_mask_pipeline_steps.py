@@ -124,6 +124,8 @@ class MaskPipelineNotebookTests(unittest.TestCase):
         self.assertIn("--skip-test-eval", code)
         self.assertIn("manifest_final.csv", code)
         self.assertIn("Jalankan Step 39 dulu", code)
+        self.assertIn("fetch_mask_v2_script('train_proposal_hybrid_resnet50_malds.py', force=True)", code)
+        self.assertIn("required_trainer_flags", code)
 
 
 if __name__ == "__main__":
