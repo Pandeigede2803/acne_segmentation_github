@@ -242,6 +242,64 @@ output/training_runs/<FINAL_RUN_ID>/
 └── test_eval/                      # Step 41
 ```
 
+
+### 5.1 Logging dan reporting untuk AI agent
+
+Setiap step menulis log terstruktur lewat helper `pipeline_log()` di cell konfigurasi Step 34:
+
+```text
+output/experiments_512_mask_v2/pipeline_logs/
+├── pipeline_steps.jsonl   # append-only, semua event
+├── step_35.json           # event terakhir Step 35
+├── step_36.json
+├── ...
+└── step_41.json
+```
+
+Format satu event:
+
+```json
+{
+  "timestamp": "2026-11-27T...",
+  "step": "40",
+  "status": "started|success|failed",
+  "run_id": "final_mask_50ep_02",
+  "manifest": "...",
+  "output_dir": "...",
+  "command": ["python", "..."],
+  "metrics": {"best_epoch": 50, "final_train": {}}
+}
+```
+
+Aturan:
+
+- `started` ditulis sebelum proses berjalan.
+- `success` hanya ditulis jika step selesai.
+- `failed` ditulis untuk training/test yang menangkap `CalledProcessError`.
+- Jika `started` tidak diikuti `success`/`failed`, step terputus; agent harus melaporkan itu sebagai kegagalan/ketidaklengkapan.
+
+Console log tambahan:
+
+- `training_runs/<RUN_ID>/training_console.log` — seluruh stdout/stderr Step 40.
+- `test_eval/test_console.log` — seluruh stdout/stderr Step 41.
+
+Contoh membaca rekap untuk laporan agent:
+
+```python
+import json
+from pathlib import Path
+
+logs = Path('/content/drive/MyDrive/acne_project/output/experiments_512_mask_v2/pipeline_logs/pipeline_steps.jsonl')
+events = [json.loads(line) for line in logs.read_text().splitlines() if line.strip()]
+latest = {}
+for event in events:
+    latest[event['step']] = event
+for step in sorted(latest):
+    print(step, latest[step]['status'], latest[step]['timestamp'])
+```
+
+Gunakan log ini untuk mengisi laporan otomatis, bukan menebak dari output cell.
+
 ---
 
 ## 6. Aturan metodologis
@@ -352,7 +410,8 @@ kelas sangat timpang. Step 39a + Step 40 baru adalah protokol yang benar.
 | `scripts/infer_testing_images.py` | Evaluasi test |
 | `scripts/train_proposal_hybrid_resnet50_malds.py` | Trainer |
 | `tests/test_mask_refinement_v2.py` | Test audit mask |
-| `tests/test_mask_pipeline_steps.py` | Test Step 35–41 |
+| `tests/test_mask_pipeline_steps.py` | Test Step 34–41 + logging |
+| `output/.../pipeline_logs/` | Log terstruktur per step |
 
 ---
 

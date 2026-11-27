@@ -75,6 +75,17 @@ class MaskPipelineNotebookTests(unittest.TestCase):
     def markdown(self, prefix):
         return "".join(self.cells[self.heading(prefix)]["source"])
 
+    def test_every_step_writes_pipeline_logs(self):
+        config = self.code("34.")
+        self.assertIn("def pipeline_log(", config)
+        self.assertIn("def run_logged(", config)
+        self.assertIn("pipeline_steps.jsonl", config)
+        for prefix in ("35.", "36.", "37.", "38.", "39.", "39a.", "40.", "40a.", "41."):
+            code = self.code(prefix)
+            self.assertIn("pipeline_log(", code, prefix)
+        for prefix in ("40.", "41."):
+            self.assertIn("run_logged(", self.code(prefix), prefix)
+
     def test_documentation_covers_goals_and_steps(self):
         self.assertTrue(DOC.is_file(), DOC)
         text = DOC.read_text(encoding="utf-8")
