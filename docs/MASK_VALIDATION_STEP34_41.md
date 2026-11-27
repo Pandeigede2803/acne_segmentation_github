@@ -2,7 +2,8 @@
 
 **Versi:** 2026-11-27  
 **Konteks:** ACNE04-v2, 1.204 citra, 32.443 anotasi sirkular  
-**Prinsip:** validasi target mask dan dataset **sebelum** training; test tidak dipakai untuk memilih apa pun.
+**Prinsip:** validasi target mask dan dataset **sebelum** training; test tidak dipakai untuk memilih apa pun.  
+**Agent prompt:** [`docs/AGENT_PROMPT_STEP34_41.md`](AGENT_PROMPT_STEP34_41.md)
 
 ---
 
@@ -49,7 +50,7 @@ belajar dari target dan distribusi data yang dapat dipertanggungjawabkan.
 | 34a | Validasi input | Cek Step 31, anotasi SHA-256, folder foto, script, provenance | `MASK_V2_COMMAND` |
 | 34b | Jalankan pilot | V1/V2 pada 12 citra train | `step34_v2_sigma1.2_k1/` |
 | 34c | Baca pilot | Tabel, grid 4 panel, report | — |
-| 35 | Statistik pilot | Circle vs V1 vs V2 pada pilot | `step35_stats_pilot/` |
+| 35 | Statistik pilot | Circle vs V1 vs V2 pada pilot | `step35_stats_pilot_v2/` |
 | 36 | Statistik penuh | Generate V2 1.204 citra + statistik train/test | `step36_full_v2/`, `step36_stats_train/`, `step36_stats_test/` |
 | 37 | Morfologi vs severity | Boxplot + korelasi fitur train | `morphology_by_severity.png` |
 | 38 | Tinjauan visual | Kasus disagreement V1–V2 | `comparison_grid.png` |
@@ -222,7 +223,7 @@ dari test.
 ```text
 output/experiments_512_mask_v2/
 ├── step34_v2_sigma1.2_k1/          # pilot V1/V2
-├── step35_stats_pilot/
+├── step35_stats_pilot_v2/
 ├── step36_full_v2/                 # 1.204 mask V1/V2
 ├── step36_stats_train/
 ├── step36_stats_test/
@@ -411,6 +412,7 @@ kelas sangat timpang. Step 39a + Step 40 baru adalah protokol yang benar.
 | `scripts/train_proposal_hybrid_resnet50_malds.py` | Trainer |
 | `tests/test_mask_refinement_v2.py` | Test audit mask |
 | `tests/test_mask_pipeline_steps.py` | Test Step 34–41 + logging |
+| `docs/AGENT_PROMPT_STEP34_41.md` | Prompt siap pakai untuk AI agent |
 | `output/.../pipeline_logs/` | Log terstruktur per step |
 
 ---

@@ -29,6 +29,9 @@ class MaskStatisticsScriptTests(unittest.TestCase):
         self.assertIn("Jangan memilih varian memakai test set", self.source)
         self.assertIn("eta_squared_by_class", self.source)
         self.assertIn("--annotations", self.source)
+        self.assertIn('"fallback_annotations": sum(', self.source)
+        self.assertIn('"lost_annotations": sum(', self.source)
+        self.assertIn('"out_of_bounds_annotations": sum(', self.source)
         self.assertIn("--grids", self.source)
 
     def test_refuses_to_overwrite_and_supports_self_test(self):
@@ -88,6 +91,7 @@ class MaskPipelineNotebookTests(unittest.TestCase):
 
     def test_documentation_covers_goals_and_steps(self):
         self.assertTrue(DOC.is_file(), DOC)
+        self.assertTrue((ROOT / "docs" / "AGENT_PROMPT_STEP34_41.md").is_file())
         text = DOC.read_text(encoding="utf-8")
         for expected in ("Goal", "Step 34", "Step 39a", "Step 41",
                          "Test lock", "Augmentasi wajib", "Troubleshooting"):
@@ -115,6 +119,8 @@ class MaskPipelineNotebookTests(unittest.TestCase):
             self.assertIn("evaluate_mask_variants.py", code)
             self.assertIn("RUN_", code)
         self.assertIn("--split', 'all'", self.code("35."))
+        self.assertIn("step35_stats_pilot_v2", self.code("35."))
+        self.assertIn("has_fallback", self.code("35."))
         self.assertIn("--no-overlays", self.code("36."))
         self.assertIn("step36_full_v2", self.code("36."))
         self.assertIn("step36_stats_train", self.code("36."))

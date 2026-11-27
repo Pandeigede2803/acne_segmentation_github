@@ -116,6 +116,13 @@ def format_number(value: float | None) -> str:
     return "" if value is None else f"{value:.6f}"
 
 
+def as_int(value) -> int:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
 def mask_features(mask: np.ndarray, circle_area: int) -> dict:
     binary = (mask > 127).astype(np.uint8)
     height, width = binary.shape
@@ -222,7 +229,14 @@ def summarize_classes(rows: list[dict], variants: tuple[str, ...]) -> list[dict]
     output = []
     for label in classes:
         group = [row for row in rows if row["label_name"] == label]
-        record = {"label_name": label, "label_index": group[0].get("label_index", ""), "images": len(group)}
+        record = {
+            "label_name": label,
+            "label_index": group[0].get("label_index", ""),
+            "images": len(group),
+            "fallback_annotations": sum(as_int(row.get("fallback_annotations")) for row in group),
+            "lost_annotations": sum(as_int(row.get("lost_annotations")) for row in group),
+            "out_of_bounds_annotations": sum(as_int(row.get("out_of_bounds_annotations")) for row in group),
+        }
         for variant in variants:
             for feature in ("area_frac", "area_ratio_circle", "components", "spread", "compactness"):
                 values = [float(row[f"{variant}_{feature}"]) for row in group]
@@ -435,6 +449,8 @@ def main() -> None:
             "split": row.get("split", ""),
             "n_circles": row.get("n_circles", ""),
             "fallback_annotations": row.get("fallback_annotations", ""),
+            "lost_annotations": row.get("lost_annotations", ""),
+            "out_of_bounds_annotations": row.get("out_of_bounds_annotations", ""),
             "preprocessed_path": row["preprocessed_path"],
             "circle_mask": row["circle_mask"],
             "v1_mask": row.get("v1_mask", ""),
