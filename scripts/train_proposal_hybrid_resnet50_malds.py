@@ -78,6 +78,12 @@ def parse_args() -> argparse.Namespace:
                         help="0 = nonaktif. Dihitung dalam validation interval setelah unfreeze.")
     parser.add_argument("--max-optimizer-steps", type=int, default=0,
                         help="0 = nonaktif. Berhenti setelah budget optimizer updates tercapai.")
+    parser.add_argument("--count-head", action="store_true",
+                        help="Tambah regresi jumlah lesi dari n_circles (auxiliary task).")
+    parser.add_argument("--count-weight", type=float, default=0.1,
+                        help="Bobot loss counting; hanya dipakai bila --count-head aktif.")
+    parser.add_argument("--count-loss", choices=("smooth_l1", "mse"), default="smooth_l1",
+                        help="Loss counting pada target log1p(n_circles).")
     parser.add_argument("--skip-test-eval", action="store_true",
                         help="Skip test evaluation for cross-validation folds.")
     parser.add_argument("--no-validation", action="store_true",
@@ -228,6 +234,7 @@ class PreprocessedAcneDataset(Dataset):
             "mask": mask_tensor,
             "label": torch.tensor(int(row["label_index"]), dtype=torch.long),
             "morph_target": mask_morphology(mask_tensor),
+            "count": torch.tensor(float(row.get("n_circles") or 0.0), dtype=torch.float32),
         }
 
 
@@ -284,7 +291,8 @@ class DecoderBlock(nn.Module):
 
 
 class ProposalHybridResNet50(nn.Module):
-    def __init__(self, num_classes: int = 4, pretrained: bool = False, variant: str = "proposed") -> None:
+    def __init__(self, num_classes: int = 4, pretrained: bool = False, variant: str = "proposed",
+                 count_head: bool = False) -> None:
         super().__init__()
         valid_variants = {"proposed", "baseline", "no_attention", "no_dilation", "no_amfm", "lds", "no_fusion"}
         if variant not in valid_variants:
@@ -313,6 +321,11 @@ class ProposalHybridResNet50(nn.Module):
         self.classifier = nn.Sequential(
             nn.Linear(classifier_channels, 64), nn.ReLU(inplace=True), nn.Dropout(0.3), nn.Linear(64, num_classes)
         )
+        self.use_count_head = bool(count_head)
+        if self.use_count_head:
+            self.count_head = nn.Sequential(
+                nn.Linear(classifier_channels, 64), nn.ReLU(inplace=True), nn.Linear(64, 1)
+            )
 
     def set_encoder_trainable(self, trainable: bool) -> None:
         for param in self.encoder.parameters():
@@ -359,8 +372,12 @@ class ProposalHybridResNet50(nn.Module):
             alpha = self.amfm_alpha(torch.cat([global_feature, morph_feature], dim=1))
             fused = alpha * global_feature + (1.0 - alpha) * morph_feature
         class_logits = self.classifier(fused)
-        return {"seg_logits": seg_logits, "class_logits": class_logits, "attention_map": attention_map,
-                "morph_vector": morph_vector, "class_features": fused}
+        outputs = {"seg_logits": seg_logits, "class_logits": class_logits,
+                   "attention_map": attention_map, "morph_vector": morph_vector,
+                   "class_features": fused}
+        if self.use_count_head:
+            outputs["count_pred"] = self.count_head(fused).squeeze(1)
+        return outputs
 
 
 def dice_loss_from_logits(logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
@@ -518,6 +535,8 @@ def run_epoch(
     bce = nn.BCEWithLogitsLoss()
     mse = nn.MSELoss()
     totals = {key: 0.0 for key in ["loss", "seg_loss", "cls_loss", "morph_loss", "dice", "iou", "acc", "kappa"]}
+    if getattr(args, "count_head", False):
+        totals.update({"count_loss": 0.0, "count_mae": 0.0})
     count = 0
     optimizer_steps = 0
     all_logits: list[torch.Tensor] = []
@@ -541,6 +560,17 @@ def run_epoch(
         cls_loss = (per_sample_kl * class_weights[labels]).mean()
         morph_loss = mse(outputs["morph_vector"], morph_targets)
         loss = args.seg_weight * seg_loss + args.cls_weight * cls_loss + args.morph_weight * morph_loss
+        count_loss = None
+        count_mae = None
+        if getattr(args, "count_head", False):
+            target_count = torch.log1p(batch["count"].to(device))
+            if args.count_loss == "mse":
+                count_loss = mse(outputs["count_pred"], target_count)
+            else:
+                count_loss = F.smooth_l1_loss(outputs["count_pred"], target_count)
+            loss = loss + args.count_weight * count_loss
+            pred_count = torch.expm1(outputs["count_pred"].detach().clamp(min=0.0))
+            count_mae = (pred_count - batch["count"].to(device)).abs().mean()
 
         if optimizer is not None:
             loss.backward()
@@ -557,6 +587,9 @@ def run_epoch(
         totals["seg_loss"] += seg_loss.item() * batch_size
         totals["cls_loss"] += cls_loss.item() * batch_size
         totals["morph_loss"] += morph_loss.item() * batch_size
+        if count_loss is not None:
+            totals["count_loss"] += count_loss.item() * batch_size
+            totals["count_mae"] += count_mae.item() * batch_size
         totals["dice"] += dice.item() * batch_size
         totals["iou"] += iou.item() * batch_size
         totals["acc"] += acc.item() * batch_size
@@ -704,10 +737,12 @@ def main() -> None:
         saved_variant = checkpoint_args.get("variant", "proposed")
         saved_distribution = checkpoint_args.get("resolved_label_distribution", "malds")
         saved_no_validation = bool(checkpoint_args.get("no_validation", False))
+        saved_count_head = bool(checkpoint_args.get("count_head", False))
         if (saved_variant != args.variant or saved_distribution != args.resolved_label_distribution
-                or saved_no_validation != args.no_validation):
+                or saved_no_validation != args.no_validation
+                or saved_count_head != bool(args.count_head)):
             raise ValueError(
-                "Konfigurasi variant/label-distribution/no-validation checkpoint berbeda. "
+                "Konfigurasi variant/label-distribution/no-validation/count-head checkpoint berbeda. "
                 "Gunakan output-dir baru untuk eksperimen atau resume hanya dengan konfigurasi yang sama."
             )
         model.load_state_dict(checkpoint["model_state_dict"])
@@ -870,6 +905,9 @@ def main() -> None:
             "input_normalization": args.resolved_input_normalization,
             "variant": args.variant,
             "label_distribution": args.resolved_label_distribution,
+            "count_head": bool(args.count_head),
+            "count_weight": args.count_weight,
+            "count_loss": args.count_loss,
         },
         "best_val_loss": best_val_loss,
         "best_epoch": best_epoch,

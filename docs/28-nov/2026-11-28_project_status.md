@@ -54,6 +54,17 @@ Sumber angka: `docs/AUDIT_ACNE_V2_STEP34_PLUS.md` dan
 Kesimpulan: augmentasi 1000/kelas tidak menambah informasi pasien, hanya
 mengulang sedikit citra. Ini kandidat utama penyebab lemahnya recall Level 3.
 
+### Sumber label severity
+
+- Prefix nama file (`levle0`–`levle3`) berbeda dari label NNEW pada **34 file v2**
+  (42 file pada seluruh ACNE04 1.457 citra).
+- Label NNEW cocok 100% dengan grade Hayashi dari count NNEW; prefix tidak cocok
+  pada 34/34 file tersebut.
+- `n_circles` v2 bukan count NNEW: median 19 vs 6, dan grade dari `n_circles`
+  hanya cocok dengan label NNEW pada 363/1.204 citra.
+- Rincian: `docs/28-nov/label_nnew_vs_filename.md`; daftar tinjauan manual:
+  `docs/28-nov/label_mismatch_34_review.csv`.
+
 ---
 
 ## 3. Implementasi Step 42–48
@@ -68,6 +79,10 @@ mengulang sedikit citra. Ini kandidat utama penyebab lemahnya recall Level 3.
 | 46 | `audit_class_weighting.py` | `experiment_matrix.yaml`, `training_budget.md` |
 | 47 | `train_proposal_hybrid_resnet50_malds.py` | `epoch_metrics.csv`, `best_model.pt` |
 | 48 | `evaluate_final_experiment.py` | `test_metrics.json`, confusion matrix |
+
+Tambahan E5: `--count-head` (regresi `n_circles`, target `log1p`, loss SmoothL1).
+Inference mendeteksi head ini otomatis dari checkpoint. Gaussian LDS belum
+diimplementasikan; MA-LDS tetap dipakai.
 
 Helper murni: `scripts/recovery_common.py`.  
 Prompt operator: `docs/AGENT_PROMPT_STEP42_48.md`.
@@ -232,6 +247,8 @@ Test suite: **175 OK, 5 skipped**, termasuk:
 4. Step 47 E2 (`USE_VALIDATION=False`, uniform, run ID baru).
 5. Step 47 E1 (manifest split tanpa augmentasi, run ID baru).
 6. Step 48 evaluasi test sekali per run, setelah checkpoint terkunci.
+7. E5 (opsional): E2 + counting head, split/seed/budget sama, untuk menguji
+   komponen Prokhorov yang belum ada di model.
 
 Untuk training di luar Colab: `docs/VAST_AI_TRAINING.md`.
 

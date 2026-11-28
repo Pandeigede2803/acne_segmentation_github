@@ -258,14 +258,18 @@ def main() -> None:
     pred_dir.mkdir(parents=True, exist_ok=True)
     overlay_dir.mkdir(parents=True, exist_ok=True)
 
-    if args.model_type == "proposal":
-        model = ProposalHybridResNet50(num_classes=4, pretrained=False, variant=model_variant).to(device)
-    else:
-        model = base.DilatedUNetAMFM(num_classes=4).to(device)
-
     state_dict = torch.load(args.checkpoint, map_location=device)
     if isinstance(state_dict, dict) and "model_state_dict" in state_dict:
         state_dict = state_dict["model_state_dict"]
+    has_count_head = any(str(key).startswith("count_head.") for key in state_dict)
+
+    if args.model_type == "proposal":
+        model = ProposalHybridResNet50(num_classes=4, pretrained=False,
+                                       variant=model_variant,
+                                       count_head=has_count_head).to(device)
+    else:
+        model = base.DilatedUNetAMFM(num_classes=4).to(device)
+
     model.load_state_dict(state_dict)
     model.eval()
 
@@ -348,6 +352,7 @@ def main() -> None:
         "device": str(device),
         "input_normalization": input_normalization,
         "variant": model_variant,
+        "count_head": bool(has_count_head) if args.model_type == "proposal" else False,
         "total_images": len(results),
         "classification_accuracy": correct / max(1, len(true_labels)),
         "classification_kappa": cohen_kappa_from_pairs(true_labels, pred_labels) if true_labels else "",

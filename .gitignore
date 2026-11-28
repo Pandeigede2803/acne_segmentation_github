@@ -25,6 +25,8 @@ __pycache__/
 
 # CSV manifest (di-generate ulang)
 *.csv
+# Daftar tinjauan manual label (kecil, ikut versi)
+!docs/28-nov/label_mismatch_34_review.csv
 
 # Gambar & mask output
 *.png

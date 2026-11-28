@@ -281,6 +281,36 @@ Daftar variabel folder:
 Cell Step 42–48 sekarang memeriksa folder **sebelum** menjalankan script dan
 menampilkan pesan yang menyebut variabel mana yang harus diganti.
 
+## E5 — counting head (tugas bantu ala Prokhorov)
+
+Model awal tidak punya regresi jumlah lesi. Padahal `n_circles` sudah tersedia di
+manifest. Prokhorov & Kalinin memakai penghitungan lesi sebagai tugas bantu untuk
+grading; itu komponen yang belum ada di pipeline ini.
+
+Implementasi:
+
+```bash
+python scripts/train_proposal_hybrid_resnet50_malds.py ... \
+  --count-head --count-weight 0.1 --count-loss smooth_l1
+```
+
+- Target: `log1p(n_circles)`; loss SmoothL1 (atau MSE).
+- Head regresi dari fitur fused (setelah AMFM).
+- Metrik tambahan: `count_loss`, `count_mae` per epoch.
+- Checkpoint inference mendeteksi `count_head.*` otomatis, jadi Step 48 tidak
+  perlu flag tambahan.
+- MA-LDS tidak diubah. Gaussian LDS ala Prokhorov belum diimplementasikan karena
+  pemetaan jumlah lesi → skor keparahan harus mengikuti method paper, bukan ditebak.
+
+Urutan eksperimen:
+
+1. E1/E2 tanpa count head (baseline bersih).
+2. **E5 = E2 + count head**, split/seed/budget sama.
+3. Ablation AMFM (on/off) setelah itu.
+
+Batasan: baris sintetis mewarisi `n_circles` dari citra sumber, padahal rotasi bisa
+memotong lesi. Target count untuk data augmentasi karena itu mengandung noise.
+
 ## Mode tanpa validation (60/40)
 
 Jika `--val-ratio 0`:
