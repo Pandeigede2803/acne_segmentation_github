@@ -136,6 +136,11 @@ class RecoveryScriptContractTests(unittest.TestCase):
             for artifact in artifacts:
                 self.assertIn(artifact, source, f"{name} missing {artifact}")
 
+    def test_trainer_is_self_contained(self):
+        source = (ROOT / "scripts" / "train_proposal_hybrid_resnet50_malds.py").read_text(encoding="utf-8")
+        self.assertNotIn("from recovery_common import", source)
+        self.assertIn("def per_class_report(", source)
+
     def test_trainer_supports_macro_f1_selection_and_budget(self):
         source = (ROOT / "scripts" / "train_proposal_hybrid_resnet50_malds.py").read_text(encoding="utf-8")
         for expected in ("--checkpoint-metric", "val_macro_f1", "--early-stopping-patience",
@@ -157,6 +162,8 @@ class RecoveryScriptContractTests(unittest.TestCase):
                 self.assertIn(f"## {step}.", text)
         self.assertIn("pretraining_go_no_go.md", text)
         self.assertIn("val_macro_f1", text)
+        # Shared helper must be fetched next to every standalone recovery script.
+        self.assertEqual(text.count("fetch_mask_v2_script('recovery_common.py')"), 7)
 
 
 if __name__ == "__main__":

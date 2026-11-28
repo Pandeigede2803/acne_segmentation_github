@@ -32,8 +32,6 @@ from PIL import Image, ImageEnhance
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.models import ResNet50_Weights, resnet50
 
-from recovery_common import classification_report, confusion_matrix
-
 
 LABEL_NAMES = ["levle0", "levle1", "levle2", "levle3"]
 
@@ -481,6 +479,32 @@ def write_epoch_csv(history: list[dict], path: Path) -> None:
         writer.writerows(history)
 
 
+def confusion_matrix_from_labels(true_labels: list[int], pred_labels: list[int],
+                                 num_classes: int = 4) -> list[list[int]]:
+    matrix = [[0] * num_classes for _ in range(num_classes)]
+    for true, pred in zip(true_labels, pred_labels):
+        matrix[int(true)][int(pred)] += 1
+    return matrix
+
+
+def per_class_report(matrix: list[list[int]]) -> list[dict[str, float | int]]:
+    """Local copy so the trainer has no cross-file import dependency."""
+    num_classes = len(matrix)
+    supports = [sum(row) for row in matrix]
+    predicted = [sum(matrix[row][col] for row in range(num_classes)) for col in range(num_classes)]
+    report = []
+    for cls in range(num_classes):
+        tp = matrix[cls][cls]
+        fp = predicted[cls] - tp
+        fn = supports[cls] - tp
+        precision = tp / (tp + fp) if tp + fp else 0.0
+        recall = tp / supports[cls] if supports[cls] else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        report.append({"label": cls, "support": supports[cls],
+                       "precision": precision, "recall": recall, "f1": f1})
+    return report
+
+
 def run_epoch(
     model: ProposalHybridResNet50,
     loader: DataLoader,
@@ -543,8 +567,9 @@ def run_epoch(
         labels_all = torch.cat(all_labels)
         metrics["kappa"] = cohen_kappa_from_logits(logits, labels_all).item()
         metrics["macro_f1"] = macro_f1_from_logits(logits, labels_all)
-        report = classification_report(
-            confusion_matrix(labels_all.tolist(), logits.argmax(dim=1).tolist(), num_classes=4))
+        report = per_class_report(
+            confusion_matrix_from_labels(labels_all.tolist(),
+                                         logits.argmax(dim=1).tolist(), num_classes=4))
         for row in report:
             cls = int(row["label"])
             metrics[f"precision_{cls}"] = float(row["precision"])

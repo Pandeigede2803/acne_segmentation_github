@@ -134,6 +134,10 @@ tidak mengirim `--checkpoint-metric`.
 
 ## Menjalankan tanpa notebook
 
+> **Penting:** script Step 42–46 dan 48 mengimpor `scripts/recovery_common.py`.
+> File itu harus berada di folder yang sama. Notebook mengunduhnya otomatis;
+> untuk pemakaian CLI, salin juga `recovery_common.py` ke folder script.
+
 ```bash
 # 42
 python scripts/detect_exact_duplicates.py \
@@ -205,6 +209,18 @@ python scripts/evaluate_final_experiment.py \
 - Target Macro F1 0,70 / recall Level 3 0,75 bersifat aspiratif, bukan syarat validitas.
 
 ---
+
+## Troubleshooting
+
+- `ModuleNotFoundError: No module named 'recovery_common'`
+  → `recovery_common.py` belum ada di `SCRIPTS_DIR`/folder script. Upload file
+  itu (atau jalankan ulang cell yang mengunduhnya), lalu ulangi step.
+- `FileExistsError: ... sudah berisi file`
+  → ganti nama folder output (mis. `step42_exact_duplicates_v2`); jangan hapus
+  hasil lama.
+- `Split tidak PASS`
+  → baca `split_integrity.json`; biasanya ada grup lintas split atau kelas
+  hilang. Selesaikan duplikat/konflik dulu.
 
 ## Keterbatasan yang harus dilaporkan
 

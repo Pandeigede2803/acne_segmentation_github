@@ -31,8 +31,9 @@ ATURAN KERAS
 PREFLIGHT
 - GPU/CPU aktif sesuai step; Step 47 butuh GPU.
 - Jalankan Step 4 (mount Drive) dan Step 34 (helper + pipeline_log + SCRIPTS_DIR).
-- Pastikan script Step 42–48 tersedia di SCRIPTS_DIR atau bisa diunduh dari
-  GitHub main. Jika tidak, berhenti dan laporkan.
+- Pastikan script Step 42–48 **dan `recovery_common.py`** tersedia di SCRIPTS_DIR
+  atau bisa diunduh dari GitHub main. Jika `recovery_common` hilang, step akan
+  gagal dengan ModuleNotFoundError; berhenti dan laporkan.
 - Pastikan folder recovery_v1 dapat ditulis.
 
 URUTAN
