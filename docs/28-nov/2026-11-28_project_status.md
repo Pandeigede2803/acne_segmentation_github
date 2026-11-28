@@ -282,6 +282,8 @@ Untuk training di luar Colab: `docs/VAST_AI_TRAINING.md`.
 ## 10. Referensi
 
 - Protokol: `docs/28-nov/step42_48_dataset_recovery_experiment.md`
+- Runbook E5a (AMFM + count head, 60/40, 50-epoch budget):
+  `docs/28-nov/RUN_E5A_COUNT_60_40.md`
 - Implementasi: `docs/RECOVERY_STEP42_48.md`
 - Prompt operator: `docs/AGENT_PROMPT_STEP42_48.md`
 - Audit dataset: `docs/AUDIT_ACNE_V2_STEP34_PLUS.md`

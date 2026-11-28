@@ -21,6 +21,7 @@ import torch
 from PIL import Image
 
 import train_baseline_dilated_unet as base
+from lds_targets import count_to_severity_index
 from train_proposal_hybrid_resnet50_malds import ProposalHybridResNet50
 
 
@@ -297,6 +298,20 @@ def main() -> None:
                 pred_label = int(class_prob.argmax().item())
                 confidence = float(class_prob[pred_label].item())
 
+                pred_count_value = ""
+                pred_count_grade = ""
+                true_count_value = ""
+                count_error_value = ""
+                if "count_pred" in outputs:
+                    predicted_count = float(
+                        torch.expm1(outputs["count_pred"].detach().clamp(min=0.0))[0].cpu())
+                    pred_count_value = round(predicted_count, 2)
+                    pred_count_grade = count_to_severity_index(int(round(predicted_count)))
+                    raw_true_count = row.get("nnew_count")
+                    if raw_true_count is not None and str(raw_true_count).strip() != "":
+                        true_count_value = float(raw_true_count)
+                        count_error_value = round(predicted_count - true_count_value, 2)
+
                 gt_mask = mask_to_tensor(mask_path, args.image_size) if mask_path and mask_path.exists() else None
                 dice = ""
                 iou = ""
@@ -323,6 +338,10 @@ def main() -> None:
                     "pred_label_index": pred_label,
                     "pred_label_name": INDEX_TO_LABEL[pred_label],
                     "confidence": confidence,
+                    "pred_count": pred_count_value,
+                    "pred_count_grade": pred_count_grade,
+                    "true_count": true_count_value,
+                    "count_error": count_error_value,
                     "dice": dice,
                     "iou": iou,
                     "gt_area": int(gt_mask.sum().item()) if gt_mask is not None else "",
@@ -342,6 +361,7 @@ def main() -> None:
         writer.writerows(results)
 
     rows_with_metrics = [row for row in results if row["dice"] != ""]
+    rows_with_count = [row for row in results if row["count_error"] != ""]
     correct = sum(1 for true_label, pred_label in zip(true_labels, pred_labels) if true_label == pred_label)
     summary = {
         "manifest": str(args.manifest),
@@ -358,6 +378,10 @@ def main() -> None:
         "classification_kappa": cohen_kappa_from_pairs(true_labels, pred_labels) if true_labels else "",
         "mean_dice": sum(float(row["dice"]) for row in rows_with_metrics) / max(1, len(rows_with_metrics)),
         "mean_iou": sum(float(row["iou"]) for row in rows_with_metrics) / max(1, len(rows_with_metrics)),
+        "count_mae": (sum(abs(float(row["count_error"])) for row in rows_with_count)
+                      / len(rows_with_count)) if rows_with_count else "",
+        "count_bias": (sum(float(row["count_error"]) for row in rows_with_count)
+                       / len(rows_with_count)) if rows_with_count else "",
         "csv_path": str(csv_path),
         "pred_mask_dir": str(pred_dir),
         "overlay_dir": str(overlay_dir),

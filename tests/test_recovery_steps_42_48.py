@@ -144,6 +144,8 @@ class RecoveryScriptContractTests(unittest.TestCase):
         inference = (ROOT / "scripts" / "infer_testing_images.py").read_text(encoding="utf-8")
         self.assertIn("has_count_head", inference)
         self.assertIn("count_head=has_count_head", inference)
+        for expected in ("pred_count", "pred_count_grade", "count_mae", "count_bias"):
+            self.assertIn(expected, inference)
 
     def test_trainer_is_self_contained(self):
         source = (ROOT / "scripts" / "train_proposal_hybrid_resnet50_malds.py").read_text(encoding="utf-8")

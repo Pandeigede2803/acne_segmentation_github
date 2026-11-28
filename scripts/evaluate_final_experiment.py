@@ -125,6 +125,50 @@ def load_comparison(path: Path) -> dict:
     }
 
 
+
+def count_metrics(rows: list[dict], true_labels: list[int]) -> dict | None:
+    """Ringkas akurasi counting head bila kolom pred_count tersedia."""
+    count_rows = [row for row in rows
+                  if str(row.get("count_error", "")).strip() not in {"", "nan"}]
+    if not count_rows:
+        return None
+    errors = [float(row["count_error"]) for row in count_rows]
+    by_grade: dict[int, list[float]] = defaultdict(list)
+    for row in count_rows:
+        by_grade[int(row["true_label_index"])].append(float(row["count_error"]))
+    payload = {
+        "n": len(errors),
+        "count_mae": sum(abs(value) for value in errors) / len(errors),
+        "count_bias": sum(errors) / len(errors),
+        "by_true_grade": {
+            str(grade): {
+                "n": len(values),
+                "count_mae": sum(abs(value) for value in values) / len(values),
+                "count_bias": sum(values) / len(values),
+            }
+            for grade, values in sorted(by_grade.items())
+        },
+    }
+    grade_rows = [row for row in rows
+                  if str(row.get("pred_count_grade", "")).strip() not in {"", "nan"}]
+    if len(grade_rows) == len(rows):
+        count_pred = [int(row["pred_count_grade"]) for row in grade_rows]
+        if all(0 <= value <= 3 for value in count_pred):
+            matrix = confusion_matrix(true_labels, count_pred)
+            report = classification_report(matrix)
+            payload["grade_from_count"] = {
+                "accuracy": sum(1 for true, pred in zip(true_labels, count_pred)
+                                if true == pred) / len(rows),
+                "macro_f1": macro_f1_from_report(report),
+                "confusion_matrix": matrix,
+                "recall_ci95_wilson": {
+                    str(cls): wilson_interval(matrix[cls][cls], report[cls]["support"])
+                    for cls in range(4)
+                },
+            }
+    return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -171,6 +215,7 @@ def main() -> None:
     group_ci = cluster_bootstrap(rows, groups, args.bootstrap, args.seed) if groups else {}
     dice = [float(row["dice"]) for row in rows if str(row.get("dice", "")) not in {"", "nan"}]
     iou = [float(row["iou"]) for row in rows if str(row.get("iou", "")) not in {"", "nan"}]
+    counting = count_metrics(rows, true_labels)
 
     run_metrics = {}
     if args.metrics and args.metrics.is_file():
@@ -192,6 +237,7 @@ def main() -> None:
         "ordinal_bias": bias,
         "mean_dice": sum(dice) / len(dice) if dice else None,
         "mean_iou": sum(iou) / len(iou) if iou else None,
+        "counting": counting,
         "confusion_matrix": matrix,
         "classification_report": report,
         "recall_ci95_wilson": {str(cls): intervals[cls] for cls in range(4)},
@@ -275,6 +321,25 @@ def main() -> None:
         "", "## Ordinal bias", "",
         f"- underestimate: {bias['underestimated']}; exact: {bias['exact']}; "
         f"overestimate: {bias['overestimated']}.",
+    ]
+    if counting:
+        lines += [
+            "", "## Counting head", "",
+            f"- Gambar dengan count: **{counting['n']}**; "
+            f"MAE: **{counting['count_mae']:.3f}**; bias: **{counting['count_bias']:+.3f}**.",
+            "", "| True grade | n | MAE | Bias |", "|---:|---:|---:|---:|",
+        ]
+        for grade, values in counting["by_true_grade"].items():
+            lines.append(f"| {LABELS[int(grade)]} | {values['n']} | "
+                         f"{values['count_mae']:.3f} | {values['count_bias']:+.3f} |")
+        grade_metrics = counting.get("grade_from_count")
+        if grade_metrics:
+            lines += [
+                "", f"- Grade dari count prediksi: accuracy "
+                f"**{grade_metrics['accuracy']:.4f}**, Macro F1 "
+                f"**{grade_metrics['macro_f1']:.4f}** (diagnostik, bukan model final)."
+            ]
+    lines += [
         "", "## Uncertainty", "",
     ]
     if group_ci:
