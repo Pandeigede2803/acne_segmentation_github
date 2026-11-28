@@ -51,9 +51,19 @@ def resolve_run(checkpoint):
             raise FileNotFoundError(f"Foto/mask test tidak tersedia: {row.get('filename')}")
         if row.get("label_index") not in set("0123"):
             raise ValueError("Label test tidak valid.")
-    best = min(metrics["history"], key=lambda r: r["val_loss"])
-    if abs(best["val_loss"] - metrics["best_val_loss"]) > 1e-8:
-        raise ValueError("best_val_loss tidak konsisten dengan history.")
+    metric = metrics.get("checkpoint_metric", "val_loss")
+    if metric == "val_macro_f1":
+        rows = [row for row in metrics["history"] if "val_macro_f1" in row]
+        if not rows:
+            raise ValueError("checkpoint_metric val_macro_f1 tetapi history tidak memuat metrik itu.")
+        best = max(rows, key=lambda row: (row["val_macro_f1"], -row["val_loss"]))
+        stored = metrics.get("best_val_macro_f1")
+        if stored is not None and abs(best["val_macro_f1"] - stored) > 1e-9:
+            raise ValueError("best_val_macro_f1 tidak konsisten dengan history.")
+    else:
+        best = min(metrics["history"], key=lambda row: row["val_loss"])
+        if abs(best["val_loss"] - metrics["best_val_loss"]) > 1e-8:
+            raise ValueError("best_val_loss tidak konsisten dengan history.")
     return {"manifest": str(manifest), "checkpoint": str(checkpoint), "split": "test",
             "image_size": int(config["image_size"]), "threshold": 0.5,
             "input_normalization": normalization, "variant": "proposed", "model_type": "proposal",

@@ -1,5 +1,9 @@
 # ACNE04-v2 — Dataset Recovery & Controlled Experiment Protocol
 
+> **Status implementasi (2026-11-28):** Step 42–48 sudah tersedia sebagai cell
+> notebook dan script. Lihat `docs/RECOVERY_STEP42_48.md` dan
+> `docs/AGENT_PROMPT_STEP42_48.md`. Step 47 tetap terkunci di balik gate Step 46.
+
 ## 1. Objective dan scope
 
 Investigasi penurunan recall Level 3 setelah offline augmentation 1.000/class, perbaiki validitas dataset, dan siapkan eksperimen yang dapat direproduksi. Jangan mengejar accuracy dengan mengorbankan minority-class recall atau integritas evaluasi.

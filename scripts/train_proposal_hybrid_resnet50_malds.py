@@ -32,6 +32,8 @@ from PIL import Image, ImageEnhance
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.models import ResNet50_Weights, resnet50
 
+from recovery_common import classification_report, confusion_matrix
+
 
 LABEL_NAMES = ["levle0", "levle1", "levle2", "levle3"]
 
@@ -71,6 +73,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--class-weighting", choices=("balanced", "none"), default="balanced",
                         help="Classification loss weights: N_train / (4 * class_count), or all ones.")
     parser.add_argument("--resume", action="store_true", help="Resume from last_checkpoint.pt in output-dir.")
+    parser.add_argument("--checkpoint-metric", choices=("val_loss", "val_macro_f1"),
+                        default="val_loss",
+                        help="Metrik pemilihan best_model.pt; tie-break selalu val_loss lebih rendah.")
+    parser.add_argument("--early-stopping-patience", type=int, default=0,
+                        help="0 = nonaktif. Dihitung dalam validation interval setelah unfreeze.")
+    parser.add_argument("--max-optimizer-steps", type=int, default=0,
+                        help="0 = nonaktif. Berhenti setelah budget optimizer updates tercapai.")
     parser.add_argument("--skip-test-eval", action="store_true",
                         help="Skip test evaluation for cross-validation folds.")
     parser.add_argument("--no-validation", action="store_true",
@@ -439,6 +448,39 @@ def macro_f1_from_logits(logits: torch.Tensor, labels: torch.Tensor, num_classes
     return sum(scores) / num_classes
 
 
+def metric_is_better(value: float, best_value: float, loss: float, best_loss: float,
+                     metric: str) -> bool:
+    """Lower val_loss or higher val_macro_f1; ties break on lower val_loss."""
+    if metric == "val_macro_f1":
+        if value > best_value + 1e-12:
+            return True
+        return abs(value - best_value) <= 1e-12 and loss < best_loss - 1e-12
+    return loss < best_loss
+
+
+def best_row_for_metric(history: list[dict], metric: str) -> dict | None:
+    rows = [row for row in history if row.get(metric) is not None]
+    if not rows:
+        return None
+    if metric == "val_macro_f1":
+        return max(rows, key=lambda row: (float(row[metric]), -float(row.get("val_loss", 0.0))))
+    return min(rows, key=lambda row: float(row[metric]))
+
+
+def write_epoch_csv(history: list[dict], path: Path) -> None:
+    if not history:
+        return
+    fields: list[str] = []
+    for row in history:
+        for key in row:
+            if key not in fields:
+                fields.append(key)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(history)
+
+
 def run_epoch(
     model: ProposalHybridResNet50,
     loader: DataLoader,
@@ -453,6 +495,7 @@ def run_epoch(
     mse = nn.MSELoss()
     totals = {key: 0.0 for key in ["loss", "seg_loss", "cls_loss", "morph_loss", "dice", "iou", "acc", "kappa"]}
     count = 0
+    optimizer_steps = 0
     all_logits: list[torch.Tensor] = []
     all_labels: list[torch.Tensor] = []
 
@@ -478,6 +521,7 @@ def run_epoch(
         if optimizer is not None:
             loss.backward()
             optimizer.step()
+            optimizer_steps += 1
 
         dice, iou = dice_iou_from_logits(outputs["seg_logits"], masks)
         acc = (outputs["class_logits"].argmax(dim=1) == labels).float().mean()
@@ -493,9 +537,20 @@ def run_epoch(
         totals["iou"] += iou.item() * batch_size
         totals["acc"] += acc.item() * batch_size
     metrics = {key: value / max(1, count) for key, value in totals.items()}
+    metrics["optimizer_steps"] = optimizer_steps
     if all_labels:
-        metrics["kappa"] = cohen_kappa_from_logits(torch.cat(all_logits), torch.cat(all_labels)).item()
-        metrics["macro_f1"] = macro_f1_from_logits(torch.cat(all_logits), torch.cat(all_labels))
+        logits = torch.cat(all_logits)
+        labels_all = torch.cat(all_labels)
+        metrics["kappa"] = cohen_kappa_from_logits(logits, labels_all).item()
+        metrics["macro_f1"] = macro_f1_from_logits(logits, labels_all)
+        report = classification_report(
+            confusion_matrix(labels_all.tolist(), logits.argmax(dim=1).tolist(), num_classes=4))
+        for row in report:
+            cls = int(row["label"])
+            metrics[f"precision_{cls}"] = float(row["precision"])
+            metrics[f"recall_{cls}"] = float(row["recall"])
+            metrics[f"f1_{cls}"] = float(row["f1"])
+            metrics[f"support_{cls}"] = int(row["support"])
     return metrics
 
 
@@ -595,8 +650,15 @@ def main() -> None:
 
     model = ProposalHybridResNet50(num_classes=4, pretrained=args.pretrained, variant=args.variant).to(device)
     start_epoch = 1
+    checkpoint_metric = args.checkpoint_metric
     best_val_loss = float("inf") if has_validation else None
+    best_metric_value = (float("-inf") if checkpoint_metric == "val_macro_f1"
+                         else float("inf")) if has_validation else None
+    best_loss_for_metric = float("inf")
     best_epoch = 0
+    optimizer_steps_total = 0
+    stale_intervals = 0
+    stopped_reason = ""
     history: list[dict[str, float | int | str]] = []
     total_epochs = args.phase1_epochs + args.phase2_epochs
 
@@ -628,9 +690,14 @@ def main() -> None:
         best_val_loss = checkpoint.get("best_val_loss")
         best_epoch = int(checkpoint.get("best_epoch", 0) or 0)
         history = checkpoint["history"]
+        optimizer_steps_total = int(checkpoint.get("optimizer_steps_total", 0) or 0)
         if has_validation and history:
-            best_row = min(history, key=lambda item: item["val_loss"])
-            best_epoch, best_val_loss = int(best_row["epoch"]), float(best_row["val_loss"])
+            best_row = best_row_for_metric(history, checkpoint_metric)
+            if best_row is not None:
+                best_epoch = int(best_row["epoch"])
+                best_val_loss = float(best_row["val_loss"])
+                best_metric_value = float(best_row[checkpoint_metric])
+                best_loss_for_metric = float(best_row["val_loss"])
         if "phase1_optimizer_state_dict" in checkpoint:
             phase1_optimizer.load_state_dict(checkpoint["phase1_optimizer_state_dict"])
         if "phase2_optimizer_state_dict" in checkpoint:
@@ -695,17 +762,29 @@ def main() -> None:
                if val_metrics is not None else "")
         )
 
-        if val_metrics is not None and val_metrics["loss"] < best_val_loss:
-            best_val_loss = val_metrics["loss"]
-            best_epoch = epoch
-            torch.save(model.state_dict(), best_model_path)
-            print("💾 Best model diperbarui")
+        improved = False
+        if val_metrics is not None:
+            value = float(val_metrics["macro_f1"] if checkpoint_metric == "val_macro_f1"
+                          else val_metrics["loss"])
+            best_val_loss = min(float(best_val_loss), float(val_metrics["loss"]))
+            if metric_is_better(value, float(best_metric_value), float(val_metrics["loss"]),
+                                float(best_loss_for_metric), checkpoint_metric):
+                best_metric_value = value
+                best_loss_for_metric = float(val_metrics["loss"])
+                best_epoch = epoch
+                improved = True
+                torch.save(model.state_dict(), best_model_path)
+                print(f"💾 Best model diperbarui ({checkpoint_metric}={value:.4f})")
+        optimizer_steps_total += int(train_metrics.get("optimizer_steps", 0) or 0)
 
         torch.save(
             {
                 "epoch": epoch,
                 "best_val_loss": best_val_loss,
                 "best_epoch": best_epoch,
+                "best_metric_value": best_metric_value,
+                "checkpoint_metric": checkpoint_metric,
+                "optimizer_steps_total": optimizer_steps_total,
                 "model_state_dict": model.state_dict(),
                 "phase1_optimizer_state_dict": phase1_optimizer.state_dict(),
                 "phase2_optimizer_state_dict": phase2_optimizer.state_dict(),
@@ -718,7 +797,23 @@ def main() -> None:
             },
             last_checkpoint_path,
         )
-        save_json({"history": history, "best_val_loss": best_val_loss}, args.output_dir / "history_partial.json")
+        save_json({"history": history, "best_val_loss": best_val_loss,
+                   "best_metric_value": best_metric_value,
+                   "checkpoint_metric": checkpoint_metric,
+                   "optimizer_steps_total": optimizer_steps_total},
+                  args.output_dir / "history_partial.json")
+        write_epoch_csv(history, args.output_dir / "epoch_metrics.csv")
+
+        if args.max_optimizer_steps and optimizer_steps_total >= args.max_optimizer_steps:
+            stopped_reason = "max_optimizer_steps"
+            print(f"⏹️ Budget optimizer steps tercapai: {optimizer_steps_total}")
+            break
+        if has_validation and phase == "phase2_unfreeze" and args.early_stopping_patience > 0:
+            stale_intervals = 0 if improved else stale_intervals + 1
+            if stale_intervals >= args.early_stopping_patience:
+                stopped_reason = "early_stopping"
+                print(f"⏹️ Early stopping: {stale_intervals} validation interval tanpa perbaikan")
+                break
 
     if not has_validation:
         best_epoch = total_epochs
@@ -753,7 +848,20 @@ def main() -> None:
         },
         "best_val_loss": best_val_loss,
         "best_epoch": best_epoch,
-        "checkpoint_selection": ("final_epoch_no_validation" if not has_validation else "min_val_loss"),
+        "checkpoint_metric": checkpoint_metric,
+        "best_metric_value": best_metric_value,
+        "best_val_macro_f1": (float(best_row_for_metric(history, "val_macro_f1")["val_macro_f1"])
+                              if has_validation and best_row_for_metric(history, "val_macro_f1")
+                              else None),
+        "best_val_dice": (max(float(row["val_dice"]) for row in history if "val_dice" in row)
+                          if has_validation and any("val_dice" in row for row in history) else None),
+        "optimizer_steps_total": optimizer_steps_total,
+        "epochs_completed": len(history),
+        "early_stopped": stopped_reason == "early_stopping",
+        "stopped_reason": stopped_reason,
+        "checkpoint_selection": ("final_epoch_no_validation" if not has_validation
+                                 else "max_val_macro_f1" if checkpoint_metric == "val_macro_f1"
+                                 else "min_val_loss"),
         "test_metrics": test_metrics,
         "history": history,
     }

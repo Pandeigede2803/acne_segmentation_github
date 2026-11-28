@@ -416,6 +416,8 @@ kelas sangat timpang. Step 39a + Step 40 baru adalah protokol yang benar.
 | `docs/AUDIT_ACNE_V2_STEP34_PLUS.md` | Audit 12 pertanyaan dataset/augmentasi/MA-LDS/training |
 | `scripts/audit_step34_dataset_augmentation.py` | Replay split/augmentasi + ukur geometri mask |
 | `docs/audit_step34/audit_report.md` | Hasil pengukuran audit (auto-generated) |
+| `docs/RECOVERY_STEP42_48.md` | Implementasi Step 42–48 (recovery protocol) |
+| `docs/AGENT_PROMPT_STEP42_48.md` | Prompt operator Step 42–48 |
 | `output/.../pipeline_logs/` | Log terstruktur per step |
 
 ---
