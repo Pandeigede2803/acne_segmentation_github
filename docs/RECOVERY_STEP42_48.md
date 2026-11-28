@@ -67,8 +67,9 @@ Setiap cell menulis `pipeline_log` (`step_42.json`, …) dan console log di
    - dHash 64-bit + pHash 64-bit (DCT), termasuk varian horizontal flip.
    - Kandidat ≠ keputusan: hanya baris `status=confirmed` di review CSV yang dipakai.
    - Split per grup (exact + near-dup + opsional patient ID), stratifikasi per kelas.
-   - Default rasio **60/20/20** (bukan 60/40) karena validation harus tersedia;
-     rasio dapat diubah dan dilaporkan di `split_proposal.md`.
+   - Default terbaru: **60/40 tanpa validation** (`--val-ratio 0`). Mode ini dipakai
+     untuk protokol fixed-budget: checkpoint = epoch akhir, tidak ada pemilihan dari
+     validation. Mode 60/20/20 tetap tersedia dengan `--val-ratio 0.2`.
    - `split_integrity.json` memeriksa group disjoint, kelas lengkap, dan mencatat
      keterbatasan patient ID / test reuse.
 
@@ -276,6 +277,18 @@ Daftar variabel folder:
 
 Cell Step 42–48 sekarang memeriksa folder **sebelum** menjalankan script dan
 menampilkan pesan yang menyebut variabel mana yang harus diganti.
+
+## Mode tanpa validation (60/40)
+
+Jika `--val-ratio 0`:
+
+- manifest hanya berisi `train` dan `test`;
+- Step 45/46 tetap berjalan (val opsional);
+- Step 47 memakai `--no-validation`: `best_model.pt` = epoch terakhir pada budget
+  optimizer update yang ditetapkan di muka;
+- tidak ada early stopping dan tidak ada pemilihan checkpoint dari validation;
+- perbandingan E1/E2 tidak boleh memilih pemenang berdasarkan test. Tetapkan
+  E2 sebagai primary sebelum melihat hasil, dan laporkan E1 sebagai kontrol.
 
 ## Troubleshooting
 

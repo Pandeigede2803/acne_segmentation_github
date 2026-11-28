@@ -65,7 +65,8 @@ def main() -> None:
                         help="CSV opsional filename,patient_id (metadata resmi).")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--train-ratio", type=float, default=0.6)
-    parser.add_argument("--val-ratio", type=float, default=0.2)
+    parser.add_argument("--val-ratio", type=float, default=0.2,
+                        help="0 = tanpa validation (train/test saja).")
     parser.add_argument("--test-ratio", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
@@ -152,7 +153,8 @@ def main() -> None:
     for row in output_rows:
         splits_by_group[row["group_id"]].add(row["split"])
     leaking = sorted(group for group, splits in splits_by_group.items() if len(splits) > 1)
-    missing_classes = [split for split in ("train", "val", "test")
+    evaluated_splits = ["train", "test"] + (["val"] if args.val_ratio > 0 else [])
+    missing_classes = [split for split in evaluated_splits
                        if any(counts.get((split, label), 0) == 0 for label in range(4))]
 
     integrity = {
@@ -202,9 +204,10 @@ def main() -> None:
         "", "## Jumlah", "",
         "| Split | L0 | L1 | L2 | L3 | Total | Grup |", "|---|---:|---:|---:|---:|---:|---:|",
     ]
-    for split in ("train", "val", "test"):
+    report_splits = ["train", "test"] + (["val"] if args.val_ratio > 0 else [])
+    for split in report_splits:
         report.append(f"| {split} | " + " | ".join(str(counts.get((split, label), 0))
-                                                   for label in range(4))
+                                                    for label in range(4))
                       + f" | {split_totals[split]} | {len(groups_by_split[split])} |")
     report += [
         "", f"- Level 3 validation: **{level3_val} citra**.",

@@ -841,7 +841,7 @@ def main() -> None:
                 break
 
     if not has_validation:
-        best_epoch = total_epochs
+        best_epoch = int(history[-1]["epoch"]) if history else total_epochs
         torch.save(model.state_dict(), best_model_path)
         print("💾 Checkpoint epoch akhir disimpan (tanpa validasi).")
 

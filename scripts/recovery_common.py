@@ -118,8 +118,8 @@ def assign_grouped_splits(group_labels: dict[str, int], train_ratio: float = 0.6
     """Deterministic stratified split over groups, never over individual images."""
     if abs(train_ratio + val_ratio + test_ratio - 1.0) > 1e-6:
         raise ValueError("train+val+test ratio harus 1.0.")
-    if min(train_ratio, val_ratio, test_ratio) <= 0:
-        raise ValueError("Semua ratio harus > 0.")
+    if train_ratio <= 0 or test_ratio <= 0 or val_ratio < 0:
+        raise ValueError("train dan test harus > 0; val boleh 0.")
 
     by_class: dict[int, list[str]] = {}
     for group, label in group_labels.items():
@@ -135,8 +135,8 @@ def assign_grouped_splits(group_labels: dict[str, int], train_ratio: float = 0.6
             raise ValueError(f"Kelas {label} hanya punya {total} grup; butuh >= 3 untuk train/val/test.")
 
         n_test = max(min_test_per_class, int(round(total * test_ratio)))
-        n_val = max(min_val_per_class, int(round(total * val_ratio)))
-        n_test = min(n_test, total - 2)
+        n_val = 0 if val_ratio == 0 else max(min_val_per_class, int(round(total * val_ratio)))
+        n_test = min(n_test, total - 1 - n_val)
         n_val = min(n_val, total - n_test - 1)
         n_train = total - n_test - n_val
         if n_train < 1:

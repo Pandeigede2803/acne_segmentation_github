@@ -73,8 +73,8 @@ def main() -> None:
 
     rows, fields = read_rows(args.manifest)
     splits = {row.get("split") for row in rows}
-    if splits != {"train", "val", "test"}:
-        raise ValueError(f"Manifest harus train/val/test; ditemukan {sorted(splits)}.")
+    if not {"train", "test"} <= splits or not splits <= {"train", "val", "test"}:
+        raise ValueError(f"Manifest harus train/test (val opsional); ditemukan {sorted(splits)}.")
     if any(marker in row["filename"] for row in rows for marker in SYNTHETIC_MARKERS):
         raise ValueError("Manifest sudah memuat baris sintetis; pakai manifest original Step 43B.")
 
