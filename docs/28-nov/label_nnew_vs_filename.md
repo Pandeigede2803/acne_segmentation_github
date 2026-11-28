@@ -206,7 +206,117 @@ prediksi model.
   perbandingan count di tabel hanya untuk konteks, bukan target training.
 - 18 file punya count tidak stabil antar fold. Label 4 kelasnya tetap stabil.
 
-## 11. Reproduksi
+## 11. Ground truth operasional
+
+Ambiguitas di dataset ini terdiri dari dua hal yang berbeda:
+
+1. **Ambiguitas definisi** — sumber mana yang dipakai. Ini bisa diselesaikan
+   secara deterministik dengan menetapkan satu kebijakan.
+2. **Ambiguitas pengukuran** — apakah count/label itu benar secara klinis. Ini
+   tidak bisa diselesaikan otomatis; harus diestimasi lewat audit sampel.
+
+Jangan mencampur keduanya.
+
+### GT-A: kompatibel Prokhorov (direkomendasikan)
+
+| Komponen | Sumber |
+|---|---|
+| Severity | label NNEW |
+| Count training | count NNEW pada fold masing-masing |
+| Count deskriptif | median count antar fold |
+| Mask segmentasi | `circle_masks/` dari anotasi resmi v2 |
+| Split | 5 fold NNEW, dibatasi 1.204 citra |
+
+Label severity stabil di semua fold (1.204/1.204), jadi tidak ada kebocoran
+label dari fold lain. Count per fold dipakai apa adanya karena 18 file punya
+count berbeda antar fold.
+
+### GT-B: native v2
+
+| Komponen | Sumber |
+|---|---|
+| Severity | Hayashi dari `n_circles` v2 |
+| Count | `n_circles` v2 |
+| Mask | circle v2 yang sama |
+
+GT-B konsisten secara internal, tetapi distribusinya 123 / 522 / 400 / 159 dan
+tidak sebanding dengan Prokhorov. Jangan mencampur GT-A dan GT-B dalam satu
+eksperimen.
+
+### Manifest deterministik
+
+```bash
+python scripts/build_ground_truth_manifest.py \
+  --out-dir output/ground_truth \
+  --audit-per-grade 15
+```
+
+Output:
+
+| File | Isi |
+|---|---|
+| `ground_truth_manifest_nnew.csv` | 6.020 baris (1.204 file × 5 fold) |
+| `ground_truth_review_nnew.csv` | 47 file prioritas tinjauan |
+| `label_audit_sample_nnew.csv` | 60 citra acak berstrata (15 per grade) |
+| `ground_truth_summary_nnew.json` | ringkasan angka |
+
+Di Colab, sesuaikan `--classification-dir`, `--annotations`, dan `--image-dir`
+dengan lokasi `/content/...` yang dipakai notebook.
+
+47 file prioritas = 34 prefix mismatch + 14 count outlier − 1 irisan. Outlier
+didefinisikan sebagai `|z| > 3` dari log-ratio `n_circles` v2 vs count NNEW,
+dihitung di dalam grade yang sama. Ini triase, bukan label baru.
+
+### Integrasi ke pipeline Step 42
+
+Manifest sumber Step 42 (`refined_manifest_v2.csv`) memberi label dari prefix
+nama file, karena `refine_masks_color.py` memakai `level_from_filename`. Agar
+GT-A dipakai, patch manifest itu lebih dulu:
+
+```bash
+python scripts/apply_ground_truth_labels.py \
+  --manifest /path/refined_manifest_v2.csv \
+  --output /path/refined_manifest_v2_nnew.csv
+```
+
+Script menulis manifest baru (asli tidak diubah), mengganti `label_name` dan
+`label_index`, serta menambahkan `nnew_count` dan `gt_source=nnew`.
+
+Setelah itu:
+
+1. arahkan `STEP42_SOURCE_MANIFEST` ke manifest baru;
+2. **jalankan ulang Step 42** (CPU, bukan training) karena input label berubah;
+3. lanjutkan Step 43B → 45 → 46 → 47.
+
+Jangan memakai output Step 42 yang lama untuk label baru: dedup dan konflik
+label di Step 42 ikut berubah.
+
+Trainer counting head memakai `nnew_count` bila ada, dan baru jatuh ke
+`n_circles` bila kolom itu tidak ada.
+
+### Audit sampel untuk estimasi noise
+
+`label_audit_sample_nnew.csv` berisi 60 citra: 15 per grade (grade 3 hanya punya
+19 citra). Langkah yang benar:
+
+1. Hitung lesi manual tanpa melihat kolom label dan tanpa melihat prediksi model.
+2. Isi `manual_count`, `manual_grade`, `rater`, `notes`.
+3. Hitung agreement: weighted kappa untuk grade, ICC/MAE untuk count.
+4. Laporkan sebagai estimasi label noise, bukan sebagai cara memilih checkpoint.
+
+Kalau audit menunjukkan NNEW sistematis salah, perbaikan label menjadi
+eksperimen terpisah dengan protokol dan test yang sama. Jangan mengganti label
+berdasarkan skor test.
+
+### Yang tidak boleh dilakukan
+
+- Membuat ground truth dari prediksi model (pseudo-label) lalu mengevaluasi
+  model itu pada label tersebut.
+- Memilih sumber label berdasarkan accuracy test.
+- Memasukkan `n_circles` v2 ke Hayashi lalu menyebutnya label NNEW.
+- Mencampur GT-A dan GT-B dalam satu run.
+
+## 12. Reproduksi
 
 ```bash
 python scripts/audit_label_sources.py \

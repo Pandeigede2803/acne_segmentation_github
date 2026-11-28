@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-optimizer-steps", type=int, default=0,
                         help="0 = nonaktif. Berhenti setelah budget optimizer updates tercapai.")
     parser.add_argument("--count-head", action="store_true",
-                        help="Tambah regresi jumlah lesi dari n_circles (auxiliary task).")
+                        help="Tambah regresi jumlah lesi (nnew_count, fallback n_circles).")
     parser.add_argument("--count-weight", type=float, default=0.1,
                         help="Bobot loss counting; hanya dipakai bila --count-head aktif.")
     parser.add_argument("--count-loss", choices=("smooth_l1", "mse"), default="smooth_l1",
@@ -198,6 +198,14 @@ def augment_pair(
     return image, mask
 
 
+def _resolve_count(row: dict) -> object:
+    """Pakai count NNEW bila manifest sudah dipatch; fallback ke n_circles v2."""
+    value = row.get("nnew_count")
+    if value is None or str(value).strip() == "":
+        value = row.get("n_circles")
+    return value
+
+
 class PreprocessedAcneDataset(Dataset):
     def __init__(self, rows: list[dict[str, str]], image_size: int, augment: bool, args: argparse.Namespace) -> None:
         self.rows = rows
@@ -234,7 +242,7 @@ class PreprocessedAcneDataset(Dataset):
             "mask": mask_tensor,
             "label": torch.tensor(int(row["label_index"]), dtype=torch.long),
             "morph_target": mask_morphology(mask_tensor),
-            "count": torch.tensor(float(row.get("n_circles") or 0.0), dtype=torch.float32),
+            "count": torch.tensor(float(_resolve_count(row) or 0.0), dtype=torch.float32),
         }
 
 

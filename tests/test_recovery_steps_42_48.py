@@ -139,7 +139,7 @@ class RecoveryScriptContractTests(unittest.TestCase):
     def test_counting_head_contract(self):
         trainer = (ROOT / "scripts" / "train_proposal_hybrid_resnet50_malds.py").read_text(encoding="utf-8")
         for expected in ("--count-head", "--count-weight", "count_pred",
-                         "count_mae", "n_circles", "count_head"):
+                         "count_mae", "n_circles", "nnew_count", "count_head"):
             self.assertIn(expected, trainer)
         inference = (ROOT / "scripts" / "infer_testing_images.py").read_text(encoding="utf-8")
         self.assertIn("has_count_head", inference)

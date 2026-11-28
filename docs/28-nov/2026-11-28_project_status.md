@@ -64,6 +64,13 @@ mengulang sedikit citra. Ini kandidat utama penyebab lemahnya recall Level 3.
   hanya cocok dengan label NNEW pada 363/1.204 citra.
 - Rincian: `docs/28-nov/label_nnew_vs_filename.md`; daftar tinjauan manual:
   `docs/28-nov/label_mismatch_34_review.csv`.
+- **Pipeline Step 42 memakai prefix nama file sebagai label**
+  (`level_from_filename` di `refine_masks_color.py`), jadi 34 file ikut salah
+  label. Patch manifest dengan `scripts/apply_ground_truth_labels.py` dan
+  jalankan ulang Step 42 sebelum Step 43B.
+- Ground truth deterministik: `scripts/build_ground_truth_manifest.py`
+  (GT-A = label/count NNEW, mask = circle v2). Review prioritas 47 file; audit
+  sampel 60 citra (15 per grade).
 
 ---
 
@@ -241,13 +248,17 @@ Test suite: **175 OK, 5 skipped**, termasuk:
 
 ## 8. Langkah berikutnya
 
-1. Step 43B ke `step43_grouped_split_60_40` dengan `val_ratio=0`, `test_ratio=0.4`.
-2. Step 45 ke `step45_controlled_aug_60_40`.
-3. Step 46 ke `step46_weighting_60_40`; pastikan gate PASS.
-4. Step 47 E2 (`USE_VALIDATION=False`, uniform, run ID baru).
-5. Step 47 E1 (manifest split tanpa augmentasi, run ID baru).
-6. Step 48 evaluasi test sekali per run, setelah checkpoint terkunci.
-7. E5 (opsional): E2 + counting head, split/seed/budget sama, untuk menguji
+1. Patch manifest sumber dengan label NNEW:
+   `scripts/apply_ground_truth_labels.py` → `refined_manifest_v2_nnew.csv`.
+2. Arahkan `STEP42_SOURCE_MANIFEST` ke manifest baru dan **jalankan ulang Step 42**
+   (CPU). Output Step 42 lama tidak boleh dipakai karena input label berubah.
+3. Step 43B ke `step43_grouped_split_60_40` dengan `val_ratio=0`, `test_ratio=0.4`.
+4. Step 45 ke `step45_controlled_aug_60_40`.
+5. Step 46 ke `step46_weighting_60_40`; pastikan gate PASS.
+6. Step 47 E2 (`USE_VALIDATION=False`, uniform, run ID baru).
+7. Step 47 E1 (manifest split tanpa augmentasi, run ID baru).
+8. Step 48 evaluasi test sekali per run, setelah checkpoint terkunci.
+9. E5 (opsional): E2 + counting head, split/seed/budget sama, untuk menguji
    komponen Prokhorov yang belum ada di model.
 
 Untuk training di luar Colab: `docs/VAST_AI_TRAINING.md`.
