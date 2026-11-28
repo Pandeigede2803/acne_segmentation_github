@@ -413,6 +413,9 @@ kelas sangat timpang. Step 39a + Step 40 baru adalah protokol yang benar.
 | `tests/test_mask_refinement_v2.py` | Test audit mask |
 | `tests/test_mask_pipeline_steps.py` | Test Step 34–41 + logging |
 | `docs/AGENT_PROMPT_STEP34_41.md` | Prompt siap pakai untuk AI agent |
+| `docs/AUDIT_ACNE_V2_STEP34_PLUS.md` | Audit 12 pertanyaan dataset/augmentasi/MA-LDS/training |
+| `scripts/audit_step34_dataset_augmentation.py` | Replay split/augmentasi + ukur geometri mask |
+| `docs/audit_step34/audit_report.md` | Hasil pengukuran audit (auto-generated) |
 | `output/.../pipeline_logs/` | Log terstruktur per step |
 
 ---

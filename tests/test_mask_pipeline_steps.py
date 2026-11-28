@@ -92,6 +92,9 @@ class MaskPipelineNotebookTests(unittest.TestCase):
     def test_documentation_covers_goals_and_steps(self):
         self.assertTrue(DOC.is_file(), DOC)
         self.assertTrue((ROOT / "docs" / "AGENT_PROMPT_STEP34_41.md").is_file())
+        self.assertTrue((ROOT / "docs" / "AUDIT_ACNE_V2_STEP34_PLUS.md").is_file())
+        self.assertTrue((ROOT / "scripts" / "audit_step34_dataset_augmentation.py").is_file())
+        self.assertTrue((ROOT / "docs" / "audit_step34" / "audit_report.md").is_file())
         text = DOC.read_text(encoding="utf-8")
         for expected in ("Goal", "Step 34", "Step 39a", "Step 41",
                          "Test lock", "Augmentasi wajib", "Troubleshooting"):
