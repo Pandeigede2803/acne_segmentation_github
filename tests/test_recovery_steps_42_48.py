@@ -163,6 +163,65 @@ class RecoveryScriptContractTests(unittest.TestCase):
             self.assertIn(phrase, text)
         self.assertIn("STEP43_SPLIT_MANIFEST", text)
 
+    def test_recovery_cells_execute_with_run_disabled(self):
+        import contextlib
+        import io
+        import sys
+        import types
+
+        fake_pandas = types.ModuleType("pandas")
+        fake_pandas.DataFrame = lambda *args, **kwargs: None
+        fake_pandas.read_csv = lambda *args, **kwargs: None
+        fake_ipython = types.ModuleType("IPython")
+        fake_display = types.ModuleType("IPython.display")
+        fake_display.display = lambda *args, **kwargs: None
+        fake_display.Image = lambda *args, **kwargs: None
+        saved = {name: sys.modules.get(name) for name in
+                 ("pandas", "IPython", "IPython.display")}
+        sys.modules.update({"pandas": fake_pandas, "IPython": fake_ipython,
+                            "IPython.display": fake_display})
+        try:
+            cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+            markers = ("RUN_STEP42", "RUN_STEP43_NEAR", "RUN_STEP43_SPLIT",
+                       "RUN_STEP44_VISUAL", "RUN_STEP45_CONTROLLED",
+                       "RUN_STEP46_WEIGHTING", "RUN_STEP47_TRAINING", "RUN_STEP48_EVAL")
+            with contextlib.redirect_stdout(io.StringIO()):
+                for index, cell in enumerate(cells):
+                    if cell["cell_type"] != "code":
+                        continue
+                    source = "".join(cell["source"])
+                    if not any(marker in source for marker in markers):
+                        continue
+                    namespace = {"__name__": "__main__"}
+                    try:
+                        exec(compile(source, f"cell{index}", "exec"), namespace)
+                    except Exception as error:  # noqa: BLE001 - surface cell failures
+                        self.fail(f"cell {index} failed with RUN=False: {type(error).__name__}: {error}")
+        finally:
+            for name, module in saved.items():
+                if module is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = module
+
+    def test_pipeline_log_calls_do_not_shadow_status(self):
+        cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
+        for index, cell in enumerate(cells):
+            if cell["cell_type"] != "code":
+                continue
+            try:
+                tree = ast.parse("".join(cell["source"]))
+            except SyntaxError:
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if name == "pipeline_log":
+                    keywords = [kw.arg for kw in node.keywords]
+                    self.assertNotIn("status", keywords, f"cell {index}: status shadowing")
+                    self.assertNotIn("step", keywords, f"cell {index}: step shadowing")
+
     def test_notebook_contains_steps_42_to_48(self):
         cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
         text = "\n".join("".join(cell["source"]) for cell in cells)
