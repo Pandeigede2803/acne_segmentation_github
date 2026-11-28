@@ -210,6 +210,43 @@ python scripts/evaluate_final_experiment.py \
 
 ---
 
+## Menjalankan ulang sebuah step
+
+Setiap step menolak menimpa folder hasil. Mengubah **opsi** (mis.
+`STEP42_QUARANTINE_MASK_CONFLICTS`) tidak otomatis mengganti folder output.
+
+Aturan:
+
+1. Satu folder = satu keputusan/kebijakan. Jangan hapus hasil lama.
+2. Ganti variabel folder, bukan hanya toggle. Contoh Step 42:
+
+   ```python
+   STEP42_OUTPUT = RECOVERY_ROOT / 'step42_exact_duplicates_strict'
+   STEP42_QUARANTINE_MASK_CONFLICTS = True
+   RUN_STEP42 = True
+   ```
+
+3. Step berikutnya memakai hasil terakhir selama cell dijalankan di sesi yang
+   sama (variabel `STEP42_OUTPUT`/`STEP42_CLEAN_MANIFEST` ikut diperbarui).
+4. Kalau folder sengaja ingin dipakai ulang (mis. resume training), itu hanya
+   untuk Step 47 lewat CLI `--resume`; di notebook gunakan run ID baru.
+
+Daftar variabel folder:
+
+| Step | Variabel |
+|---|---|
+| 42 | `STEP42_OUTPUT` |
+| 43A | `STEP43_NEAR_OUTPUT` |
+| 43B | `STEP43_SPLIT_OUTPUT` |
+| 44 | `STEP44_OUTPUT` |
+| 45 | `STEP45_OUTPUT` |
+| 46 | `STEP46_OUTPUT` |
+| 47 | `STEP47_RUN_ID` (folder = `TRAIN_DIR / STEP47_RUN_ID`) |
+| 48 | `STEP48_INFER_OUTPUT`, `STEP48_REPORT_OUTPUT` |
+
+Cell Step 42–48 sekarang memeriksa folder **sebelum** menjalankan script dan
+menampilkan pesan yang menyebut variabel mana yang harus diganti.
+
 ## Troubleshooting
 
 - `ModuleNotFoundError: No module named 'recovery_common'`
