@@ -1,6 +1,9 @@
 # Step 42–48 — Dataset Recovery & Controlled Experiment
 
 Implementasi dari protokol `docs/28-nov/step42_48_dataset_recovery_experiment.md`.
+
+**Status harian 28 Nov 2026:** [`docs/28-nov/2026-11-28_project_status.md`](28-nov/2026-11-28_project_status.md)
+
 Step 42–46 **CPU only**; Step 47 (training) baru boleh berjalan setelah gate
 Step 46 PASS dan persetujuan eksplisit. Step 48 hanya evaluasi checkpoint terkunci.
 

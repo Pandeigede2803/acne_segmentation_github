@@ -1,5 +1,7 @@
 # ACNE04-v2 — Dataset Recovery & Controlled Experiment Protocol
 
+> **Status harian:** `docs/28-nov/2026-11-28_project_status.md`
+>
 > **Status implementasi (2026-11-28):** Step 42–48 sudah tersedia sebagai cell
 > notebook dan script. Lihat `docs/RECOVERY_STEP42_48.md` dan
 > `docs/AGENT_PROMPT_STEP42_48.md`. Step 47 tetap terkunci di balik gate Step 46.
