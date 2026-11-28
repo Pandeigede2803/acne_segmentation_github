@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
-from recovery_common import read_rows, write_rows
+from recovery_common import read_rows, sha256_file, write_rows
 
 SUFFIX = re.compile(r"__offaug_c(\d)_(\d{5})$")
 THUMB = 200
@@ -243,6 +243,7 @@ def main() -> None:
     metrics = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "augmented_manifest": str(args.augmented_manifest.resolve()),
+        "augmented_manifest_sha256": sha256_file(args.augmented_manifest),
         "synthetics": len(synthetics),
         "sources": len(synthetics_by_source),
         "sampled_sources": {str(label): len(chosen[label]) for label in (0, 1, 2, 3)},

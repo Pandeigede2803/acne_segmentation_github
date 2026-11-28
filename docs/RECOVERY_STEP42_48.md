@@ -210,6 +210,36 @@ python scripts/evaluate_final_experiment.py \
 
 ---
 
+## Cek status dan auto-skip
+
+Sebelum mulai, jalankan cell **41b — Cek status Step 42–48**. Cell itu hanya
+membaca folder hasil dan menampilkan:
+
+| Kolom | Arti |
+|---|---|
+| `DONE` | artefak completion ada |
+| `INCOMPLETE` | folder ada tetapi artefak belum lengkap |
+| `MISSING` | belum dijalankan |
+
+Cell ini juga mencetak rekomendasi step berikutnya.
+
+Cell Step 42–48 **otomatis skip** bila hasil sudah ada **dan** inputnya sama
+(hash manifest/kebijakan dibandingkan dengan provenance). Kalau input berubah,
+cell menolak memakai folder lama dan meminta suffix baru (`_v2`, `_strict`, …).
+
+Yang diverifikasi otomatis:
+
+| Step | Dibandingkan |
+|---|---|
+| 42 | hash manifest + canonical rule + kebijakan karantina |
+| 43A | hash manifest bersih |
+| 43B | hash manifest bersih + hash review near-duplicate (bila tercatat) |
+| 44 | hash manifest augmented |
+| 45 | hash split manifest + target + cap + seed |
+| 46 | hash manifest controlled + hash weight manifest (bila tercatat) |
+| 47 | keberadaan `metrics.json` |
+| 48 | keberadaan `test_metrics.json` |
+
 ## Menjalankan ulang sebuah step
 
 Setiap step menolak menimpa folder hasil. Mengubah **opsi** (mis.

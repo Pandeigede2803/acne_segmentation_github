@@ -174,6 +174,12 @@ def main() -> None:
         "missing_classes": missing_classes,
         "patient_metadata": bool(patients),
         "near_duplicate_pairs_used": len(pairs),
+        "near_review_sha256": (sha256_file(args.near_review)
+                               if args.near_review and args.near_review.is_file() else None),
+        "exact_groups_sha256": (sha256_file(args.exact_groups)
+                                if args.exact_groups and args.exact_groups.is_file() else None),
+        "patients_sha256": (sha256_file(args.patients)
+                            if args.patients and args.patients.is_file() else None),
         "status": "PASS" if not leaking and not missing_classes else "FAIL",
         "limitations": [
             "Tidak ada patient ID resmi" if not patients

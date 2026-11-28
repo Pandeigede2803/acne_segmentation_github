@@ -285,6 +285,7 @@ def main() -> None:
         "counts_before": dict(sorted(before.items())),
         "counts_after": dict(sorted(after.items())),
         "canonical_rule": args.canonical_rule,
+        "quarantine_mask_conflicts": bool(args.quarantine_mask_conflicts),
     }
     (args.output_dir / "step42_metrics.json").write_text(
         json.dumps(metrics, indent=2) + "\n", encoding="utf-8")

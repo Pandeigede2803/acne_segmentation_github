@@ -151,6 +151,18 @@ class RecoveryScriptContractTests(unittest.TestCase):
         for name in ("RECOVERY_STEP42_48.md", "AGENT_PROMPT_STEP42_48.md"):
             self.assertTrue((ROOT / "docs" / name).is_file(), name)
 
+    def test_status_cell_and_auto_skip(self):
+        text = "\n".join("".join(cell["source"]) for cell in
+                          json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"])
+        self.assertIn("## 41b.", text)
+        self.assertIn("Rekomendasi:", text)
+        for phrase in ("✅ Step 42 sudah selesai", "✅ Step 43A sudah selesai",
+                       "✅ Step 43B sudah selesai", "✅ Step 44 sudah selesai",
+                       "✅ Step 45 sudah selesai", "✅ Step 46 sudah selesai",
+                       "✅ Step 47 sudah selesai", "✅ Step 48 sudah selesai"):
+            self.assertIn(phrase, text)
+        self.assertIn("STEP43_SPLIT_MANIFEST", text)
+
     def test_notebook_contains_steps_42_to_48(self):
         cells = json.loads(NOTEBOOK.read_text(encoding="utf-8"))["cells"]
         text = "\n".join("".join(cell["source"]) for cell in cells)

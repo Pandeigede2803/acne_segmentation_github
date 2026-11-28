@@ -219,6 +219,9 @@ def main() -> None:
         "manifest": str(args.manifest.resolve()),
         "manifest_sha256": sha256_file(args.manifest),
         "weight_manifest": str(args.weight_manifest) if args.weight_manifest else str(args.manifest),
+        "weight_manifest_sha256": (sha256_file(args.weight_manifest)
+                                   if args.weight_manifest and args.weight_manifest.is_file()
+                                   else sha256_file(args.manifest)),
         "counts": {str(cls): counts[cls] for cls in range(4)},
         "weights": {str(cls): weights[cls] for cls in range(4)},
         "contribution": {str(cls): contribution[cls] for cls in range(4)},
